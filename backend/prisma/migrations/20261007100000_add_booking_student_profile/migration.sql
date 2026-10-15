@@ -1,0 +1,15 @@
+ALTER TABLE "Booking"
+ADD COLUMN "studentName" TEXT,
+ADD COLUMN "studentAge" INTEGER,
+ADD COLUMN "schoolCollege" TEXT,
+ADD COLUMN "fatherName" TEXT,
+ADD COLUMN "fatherAge" INTEGER,
+ADD COLUMN "fatherEducation" TEXT,
+ADD COLUMN "motherName" TEXT,
+ADD COLUMN "motherAge" INTEGER,
+ADD COLUMN "motherEducation" TEXT,
+ADD COLUMN "familyType" TEXT,
+ADD COLUMN "address" TEXT,
+ADD COLUMN "phoneNo" TEXT,
+ADD COLUMN "emailId" TEXT,
+ADD COLUMN "subjectAssessments" JSONB;
