@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getBookingById, submitBookingDetails } from '../services/api';
+import {
+  getBookingById,
+  resendPaymentConfirmationEmails,
+  submitBookingDetails,
+  recoverBookingPayment,
+} from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import PageBackground from '../components/PageBackground';
 import { 
@@ -16,7 +21,8 @@ import {
   User,
   BookOpen,
   Sparkles,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import RazorpayPayment from '../components/RazorpayPayment';
 
@@ -24,6 +30,13 @@ interface Booking {
   id: string;
   isFreeSession: boolean;
   paymentStatus: string;
+  cancellationStatus: string;
+  cancellationReviewNote: string | null;
+  cancelledAt: string | null;
+  razorpayOrderId?: string | null;
+  razorpayPaymentId?: string | null;
+  studentPaymentEmailSentAt: string | null;
+  counselorPaymentEmailSentAt: string | null;
   amount: number;
   educationBackground: string;
   currentStream: string;
@@ -62,6 +75,14 @@ export default function BookingDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'form' | 'payment' | 'complete'>('form');
   const [showPayment, setShowPayment] = useState(false);
+  const [paymentEmailNotifications, setPaymentEmailNotifications] = useState<{
+    studentSent: boolean;
+    counselorSent: boolean;
+  } | null>(null);
+  const [retryingPaymentEmails, setRetryingPaymentEmails] = useState(false);
+  const [paymentEmailError, setPaymentEmailError] = useState('');
+  const [recoveringPayment, setRecoveringPayment] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState('');
   const formSubmitRef = useRef(false);
   const paymentSuccessRef = useRef(false);
 
@@ -75,8 +96,38 @@ export default function BookingDetailsPage() {
       
       try {
         const response = await getBookingById(bookingId, token);
-        setBooking(response.data);
-        if (response.data.isFreeSession || response.data.paymentStatus === 'PAID') {
+        if (response.data.cancelledAt) {
+          setError('This booking has been cancelled. Check My Bookings for its cancellation and refund status.');
+          return;
+        }
+        let bookingData = response.data;
+        let recoveredEmailNotifications: {
+          studentSent: boolean;
+          counselorSent: boolean;
+        } | null = null;
+        if (!bookingData.isFreeSession && bookingData.paymentStatus === 'PENDING') {
+          try {
+            const recoveryRes = await recoverBookingPayment(bookingId, token);
+            if (recoveryRes.data?.recovered && recoveryRes.data?.booking) {
+              bookingData = recoveryRes.data.booking;
+              if (recoveryRes.data.emailNotifications) {
+                recoveredEmailNotifications = recoveryRes.data.emailNotifications;
+              }
+            }
+          } catch (recErr) {
+            console.warn('Initial payment recovery check error:', recErr);
+          }
+        }
+        setBooking(bookingData);
+        if (!bookingData.isFreeSession && bookingData.paymentStatus === 'PAID') {
+          setPaymentEmailNotifications(
+            recoveredEmailNotifications || {
+              studentSent: Boolean(bookingData.studentPaymentEmailSentAt),
+              counselorSent: Boolean(bookingData.counselorPaymentEmailSentAt),
+            }
+          );
+        }
+        if (bookingData.isFreeSession || bookingData.paymentStatus === 'PAID') {
           setStep('complete');
         } else if (
           response.data.educationBackground &&
@@ -109,6 +160,35 @@ export default function BookingDetailsPage() {
     });
   };
 
+  const handleManualRecovery = async () => {
+    if (!bookingId || !token || recoveringPayment) return;
+    try {
+      setRecoveringPayment(true);
+      setRecoveryMessage('');
+      const res = await recoverBookingPayment(bookingId, token);
+      if (res.data?.recovered && res.data?.booking) {
+        setBooking(res.data.booking);
+        setStep('complete');
+        if (res.data.emailNotifications) {
+          setPaymentEmailNotifications(res.data.emailNotifications);
+        }
+        setRecoveryMessage('Payment verified and confirmed from Razorpay!');
+      } else {
+        setRecoveryMessage(res.data?.message || 'No completed payment found on Razorpay for this session.');
+      }
+    } catch (err: any) {
+      const reference = err?.response?.data?.paymentReference;
+      setRecoveryMessage(
+        (err?.response?.data?.error || 'Could not verify payment status with Razorpay.') +
+        (reference?.bookingId ? ` Booking reference: ${reference.bookingId}.` : '') +
+        (reference?.paymentId ? ` Razorpay payment reference: ${reference.paymentId}.` : '') +
+        (reference?.orderId ? ` Razorpay order reference: ${reference.orderId}.` : '')
+      );
+    } finally {
+      setRecoveringPayment(false);
+    }
+  };
+
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bookingId || !token || formSubmitRef.current) return;
@@ -131,10 +211,27 @@ export default function BookingDetailsPage() {
     }
   };
 
+  async function retryPaymentConfirmationEmails() {
+    if (!bookingId || !token || retryingPaymentEmails) return;
+    setRetryingPaymentEmails(true);
+    setPaymentEmailError('');
+    try {
+      const response = await resendPaymentConfirmationEmails(bookingId, token);
+      setPaymentEmailNotifications(response.data.emailNotifications);
+    } catch (err: any) {
+      if (err.response?.data?.emailNotifications) {
+        setPaymentEmailNotifications(err.response.data.emailNotifications);
+      }
+      setPaymentEmailError(err.response?.data?.error || 'Could not resend the payment confirmation emails.');
+    } finally {
+      setRetryingPaymentEmails(false);
+    }
+  }
+
   if (loading) {
     return (
       <PageBackground theme="booking" className="flex items-center justify-center">
-        <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+        <Loader2 className="w-12 h-12 animate-spin text-teal-300" />
       </PageBackground>
     );
   }
@@ -164,7 +261,7 @@ export default function BookingDetailsPage() {
           <h2 className="text-2xl font-bold text-gray-700 mb-4">Booking not found</h2>
           <button
             onClick={() => navigate('/counseling')}
-            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-colors"
+            className="rounded-2xl bg-[#0b3943] px-6 py-3 font-bold text-white transition-colors hover:bg-[#0d4a55]"
           >
             Back to Counseling
           </button>
@@ -176,11 +273,11 @@ export default function BookingDetailsPage() {
   return (
     <PageBackground theme="booking" className="pb-16">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-12">
+      <div className="relative overflow-hidden bg-gradient-to-br from-[#071b24] via-[#0b3943] to-[#0c3440] py-12 text-white">
         <div className="max-w-4xl mx-auto px-6">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-indigo-200 hover:text-white font-medium mb-4 transition-colors"
+            className="mb-4 flex items-center gap-2 font-medium text-teal-100 transition-colors hover:text-white"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
@@ -191,7 +288,7 @@ export default function BookingDetailsPage() {
               {step === 'payment' && <CreditCard className="w-5 h-5" />}
               {step === 'complete' && <CheckCircle2 className="w-5 h-5" />}
             </div>
-            <span className="text-indigo-200 font-medium text-sm uppercase tracking-wider">
+            <span className="text-teal-100 font-medium text-sm uppercase tracking-wider">
               Step {step === 'form' ? '1' : step === 'payment' ? '2' : '3'} of 3
             </span>
           </div>
@@ -211,7 +308,7 @@ export default function BookingDetailsPage() {
               className={`flex-1 flex items-center gap-3 ${step !== 'form' ? 'opacity-50' : ''}`}
             >
               <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                step === 'form' ? 'bg-indigo-600 text-white' : 'bg-emerald-100 text-emerald-600'
+                step === 'form' ? 'bg-teal-700 text-white' : 'bg-emerald-100 text-emerald-600'
               }`}>
                 {step !== 'form' ? <CheckCircle2 className="w-5 h-5" /> : '1'}
               </div>
@@ -228,7 +325,7 @@ export default function BookingDetailsPage() {
               }`}
             >
               <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                step === 'payment' ? 'bg-indigo-600 text-white' : 
+                step === 'payment' ? 'bg-teal-700 text-white' :
                 step === 'complete' ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500'
               }`}>
                 {step === 'complete' ? <CheckCircle2 className="w-5 h-5" /> : '2'}
@@ -256,19 +353,19 @@ export default function BookingDetailsPage() {
         {/* Session Info Card (always visible) */}
         <div className="bg-white rounded-[24px] p-6 md:p-8 shadow-sm border border-gray-100 mb-8">
           <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-indigo-500" />
+            <Calendar className="w-5 h-5 text-teal-700" />
             Session Information
           </h3>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center">
-                  <User className="w-6 h-6 text-indigo-600" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-100">
+                  <User className="h-6 w-6 text-teal-700" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Counselor</p>
                   <p className="font-bold text-gray-900">{booking.slot.counselor.name}</p>
-                  <p className="text-sm text-indigo-600">{booking.slot.counselor.specialization}</p>
+                  <p className="text-sm text-teal-700">{booking.slot.counselor.specialization}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
@@ -302,12 +399,12 @@ export default function BookingDetailsPage() {
               </div>
               <div className="flex items-center gap-4">
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-                  booking.isFreeSession ? 'bg-green-100' : 'bg-indigo-100'
+                  booking.isFreeSession ? 'bg-green-100' : 'bg-teal-100'
                 }`}>
                   {booking.isFreeSession ? (
                     <Gift className="w-6 h-6 text-green-600" />
                   ) : (
-                    <IndianRupee className="w-6 h-6 text-indigo-600" />
+                    <IndianRupee className="w-6 h-6 text-teal-700" />
                   )}
                 </div>
                 <div>
@@ -347,7 +444,7 @@ export default function BookingDetailsPage() {
                     onChange={handleFormChange}
                     placeholder="e.g., CBSE 12th Science"
                     required
-                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                    className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-all focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                   />
                 </div>
                 <div>
@@ -361,7 +458,7 @@ export default function BookingDetailsPage() {
                     onChange={handleFormChange}
                     placeholder="e.g., Engineering, Commerce"
                     required
-                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                    className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-all focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                   />
                 </div>
               </div>
@@ -377,7 +474,7 @@ export default function BookingDetailsPage() {
                   placeholder="What is your desired career path? What are your long-term goals?"
                   required
                   rows={3}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all resize-none"
+                  className="w-full resize-none rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-all focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                 />
               </div>
 
@@ -392,7 +489,7 @@ export default function BookingDetailsPage() {
                     value={formData.areasOfInterest}
                     onChange={handleFormChange}
                     placeholder="e.g., Technology, Medicine, Business"
-                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                    className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-all focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                   />
                 </div>
                 <div>
@@ -405,7 +502,7 @@ export default function BookingDetailsPage() {
                     value={formData.subjectPreferences}
                     onChange={handleFormChange}
                     placeholder="e.g., Mathematics, Physics, History"
-                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                    className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-all focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                   />
                 </div>
               </div>
@@ -420,7 +517,7 @@ export default function BookingDetailsPage() {
                   onChange={handleFormChange}
                   placeholder="Tell us about your interests, hobbies, and extracurricular activities"
                   rows={3}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all resize-none"
+                  className="w-full resize-none rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-all focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                 />
               </div>
 
@@ -428,7 +525,7 @@ export default function BookingDetailsPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 rounded-2xl bg-[#0b3943] py-4 font-bold text-white transition-all hover:bg-[#0d4a55] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {submitting ? (
                     <>
@@ -464,19 +561,51 @@ export default function BookingDetailsPage() {
             <p className="text-gray-500 mb-8">
               Complete the payment to confirm your counseling session
             </p>
+            <p className="mb-6 rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+              Your slot is reserved for 60 minutes from booking. Complete payment before the reservation expires.
+            </p>
 
             <div className="bg-amber-50 rounded-2xl p-6 mb-8 max-w-sm mx-auto">
               <p className="text-sm text-amber-600 font-semibold mb-1">Amount to Pay</p>
               <p className="text-4xl font-black text-gray-900">₹{booking.amount}</p>
             </div>
-
+            {recoveryMessage && (
+              <div className="mx-auto my-6 max-w-md rounded-xl border border-teal-200 bg-teal-50 p-4 text-sm font-medium text-teal-900">
+                {recoveryMessage}
+              </div>
+            )}
+            {booking.paymentStatus === 'FAILED' ? (
+              <div role="alert" className="my-6 max-w-md mx-auto rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
+                <p className="font-bold">This reservation has expired or its payment failed.</p>
+                <p className="mt-1">Do not retry payment for this reservation. Contact support before paying again.</p>
+                <p className="mt-2">Booking reference: {booking.id}</p>
+                {booking.razorpayPaymentId && <p>Razorpay payment reference: {booking.razorpayPaymentId}</p>}
+                {booking.razorpayOrderId && <p>Razorpay order reference: {booking.razorpayOrderId}</p>}
+                <Link to="/counseling" className="mt-3 inline-block font-bold underline">
+                  Choose another session
+                </Link>
+              </div>
+            ) : (
             <div className="flex gap-4 justify-center">
               <button
                 onClick={() => setShowPayment(true)}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-8 rounded-2xl transition-all flex items-center gap-2"
+                className="flex items-center gap-2 rounded-2xl bg-[#0b3943] px-8 py-4 font-bold text-white transition-all hover:bg-[#0d4a55]"
               >
                 <CreditCard className="w-5 h-5" />
                 Pay with Razorpay
+              </button>
+              <button
+                type="button"
+                onClick={handleManualRecovery}
+                disabled={recoveringPayment}
+                className="flex items-center gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-6 py-4 font-bold text-teal-800 transition-all hover:bg-teal-100 disabled:opacity-50"
+              >
+                {recoveringPayment ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-5 h-5" />
+                )}
+                {recoveringPayment ? 'Checking Razorpay...' : 'Already Paid? Check Status'}
               </button>
               <button
                 onClick={() => setStep('form')}
@@ -485,6 +614,7 @@ export default function BookingDetailsPage() {
                 Back
               </button>
             </div>
+            )}
           </div>
         )}
 
@@ -498,6 +628,25 @@ export default function BookingDetailsPage() {
             <p className="text-gray-500 mb-8">
               Your counseling session has been scheduled. Check your email for details.
             </p>
+            {paymentEmailNotifications &&
+              (!paymentEmailNotifications.studentSent || !paymentEmailNotifications.counselorSent) && (
+                <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
+                  <p>
+                    Payment is confirmed, but the confirmation email{paymentEmailNotifications.studentSent && paymentEmailNotifications.counselorSent ? '' : 's'} could not be delivered
+                    {!paymentEmailNotifications.studentSent && !paymentEmailNotifications.counselorSent ? ' to you or your counselor' :
+                      !paymentEmailNotifications.studentSent ? ' to you' : ' to your counselor'}.
+                  </p>
+                  {paymentEmailError && <p className="mt-2">{paymentEmailError}</p>}
+                  <button
+                    type="button"
+                    onClick={retryPaymentConfirmationEmails}
+                    disabled={retryingPaymentEmails}
+                    className="mt-3 rounded-lg border border-amber-300 px-3 py-2 font-bold disabled:opacity-50"
+                  >
+                    {retryingPaymentEmails ? 'Retrying...' : 'Retry confirmation email'}
+                  </button>
+                </div>
+              )}
 
             <div className="bg-emerald-50 rounded-2xl p-6 mb-8 max-w-md mx-auto text-left">
               <div className="flex items-center gap-3 mb-4">
@@ -529,7 +678,7 @@ export default function BookingDetailsPage() {
             <div className="flex gap-4 justify-center flex-wrap">
               <Link
                 to="/dashboard"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-8 rounded-2xl transition-all"
+                className="rounded-2xl bg-[#0b3943] px-8 py-4 font-bold text-white transition-all hover:bg-[#0d4a55]"
               >
                 Go to Dashboard
               </Link>
@@ -555,9 +704,10 @@ export default function BookingDetailsPage() {
           studentName={user?.name || ''}
           studentEmail={user?.email || ''}
           token={token!}
-          onSuccess={() => {
+          onSuccess={(_paymentId, emailNotifications) => {
             if (paymentSuccessRef.current) return;
             paymentSuccessRef.current = true;
+            setPaymentEmailNotifications(emailNotifications || null);
             setShowPayment(false);
             setStep('complete');
           }}

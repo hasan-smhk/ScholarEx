@@ -11,6 +11,7 @@ import {
   generateCounselingReport,
 } from '../services/aiCounselingReport.service';
 import { getCounselorProfileIdForUser } from '../services/counselorAccess.service';
+import { isCompleteCounselingChecklist } from '../services/counselingChecklist';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -69,7 +70,10 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
-    if (booking.paymentStatus !== 'PAID') {
+    if (booking.cancelledAt) {
+      return res.status(409).json({ error: 'Reports cannot be submitted for a cancelled booking' });
+    }
+    if (!booking.isFreeSession && booking.paymentStatus !== 'PAID') {
       return res.status(402).json({ error: 'Complete payment before submitting a report' });
     }
 
@@ -79,11 +83,19 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
     if (role === 'COUNSELOR' && (!counselorId || booking.slot.counselorId !== counselorId)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-
     // Check if report already exists
     const existingReport = await prisma.report.findUnique({
       where: { bookingId },
     });
+    if (role === 'ADMIN' && !existingReport) {
+      return res.status(409).json({ error: 'A counselor must submit and approve the report before admin review' });
+    }
+    if (
+      role === 'COUNSELOR' &&
+      (!booking.sessionChecklistCompletedAt || !isCompleteCounselingChecklist(booking.sessionChecklistAnswers))
+    ) {
+      return res.status(409).json({ error: 'Complete the counselor session checklist before submitting a report' });
+    }
 
     let report;
     let isNewReport = false;
@@ -97,12 +109,19 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
           areasOfImprovement,
           recommendations,
           nextSteps,
-          approvalStatus: 'PENDING_REVIEW',
+          approvalStatus: role === 'COUNSELOR'
+            ? 'COUNSELOR_REVIEW'
+            : existingReport.approvalStatus === 'COUNSELOR_REVIEW'
+              ? 'COUNSELOR_REVIEW'
+              : 'PENDING_REVIEW',
           isAiGenerated: req.body.isAiGenerated === true,
           reviewedAt: null,
           reviewedById: null,
           reviewNote: null,
           emailSentAt: null,
+          ...(role === 'COUNSELOR'
+            ? { counselorReviewedAt: null, counselorReviewedById: null }
+            : {}),
         },
       });
     } else {
@@ -116,6 +135,7 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
           recommendations,
           nextSteps,
           isAiGenerated: req.body.isAiGenerated === true,
+          approvalStatus: 'COUNSELOR_REVIEW',
         },
       });
       isNewReport = true;
@@ -139,7 +159,7 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
     }
 
     res.status(isNewReport ? 201 : 200).json({
-      message: 'Report submitted for admin review',
+      message: 'Report saved for counselor review',
       report,
     });
   } catch (error) {
@@ -151,11 +171,17 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
 router.post('/:bookingId/generate', authMiddleware, counselorOrAdmin, async (req: Request, res: Response) => {
   try {
     const { userId, role } = (req as any).user;
+    if (role !== 'COUNSELOR') {
+      return res.status(403).json({ error: 'Only the assigned counselor can generate the session report' });
+    }
     const booking = await prisma.booking.findUnique({
       where: { id: req.params.bookingId },
       include: { slot: { include: { counselor: true } } },
     });
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.cancelledAt) {
+      return res.status(409).json({ error: 'Reports cannot be generated for a cancelled booking' });
+    }
     const counselorId =
       role === 'COUNSELOR' ? await getCounselorProfileIdForUser(prisma, userId) : null;
     if (role === 'COUNSELOR' && (!counselorId || booking.slot.counselorId !== counselorId)) {
@@ -163,6 +189,9 @@ router.post('/:bookingId/generate', authMiddleware, counselorOrAdmin, async (req
     }
     if (!booking.isFreeSession && booking.paymentStatus !== 'PAID') {
       return res.status(402).json({ error: 'Complete payment before generating a report' });
+    }
+    if (!booking.sessionChecklistCompletedAt || !isCompleteCounselingChecklist(booking.sessionChecklistAnswers)) {
+      return res.status(409).json({ error: 'Complete the counselor session checklist before generating a report' });
     }
 
     const draft = await generateCounselingReport({
@@ -175,6 +204,7 @@ router.post('/:bookingId/generate', authMiddleware, counselorOrAdmin, async (req
       hobbies: booking.hobbies,
       marksPercentage: booking.marksPercentage,
       subjectAssessments: booking.subjectAssessments,
+      sessionChecklistAnswers: booking.sessionChecklistAnswers,
     });
     res.json(draft);
   } catch (error) {
@@ -257,6 +287,7 @@ router.get('/student/my-reports', authMiddleware, async (req: Request, res: Resp
             id: true,
             slot: {
               select: {
+                counselorId: true,
                 date: true,
                 startTime: true,
                 endTime: true,
@@ -278,8 +309,9 @@ router.get('/student/my-reports', authMiddleware, async (req: Request, res: Resp
 
 router.patch('/:reportId/review', authMiddleware, async (req: Request, res: Response) => {
   try {
-    if ((req as any).user.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Admin access required' });
+    const { userId, role } = (req as any).user;
+    if (role !== 'ADMIN' && role !== 'COUNSELOR') {
+      return res.status(403).json({ error: 'Counselor or admin access required' });
     }
     const { status, reviewNote } = req.body;
     if (status !== 'APPROVED' && status !== 'REJECTED') {
@@ -301,6 +333,7 @@ router.patch('/:reportId/review', authMiddleware, async (req: Request, res: Resp
             student: { select: { id: true, name: true, email: true } },
             slot: {
               select: {
+                counselorId: true,
                 date: true,
                 startTime: true,
                 endTime: true,
@@ -312,6 +345,28 @@ router.patch('/:reportId/review', authMiddleware, async (req: Request, res: Resp
       },
     });
     if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    if (role === 'COUNSELOR') {
+      const counselorId = await getCounselorProfileIdForUser(prisma, userId);
+      if (!counselorId || report.booking.slot.counselorId !== counselorId) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      if (status !== 'APPROVED' || report.approvalStatus !== 'COUNSELOR_REVIEW') {
+        return res.status(409).json({ error: 'Only reports awaiting counselor approval can be approved' });
+      }
+      const reviewed = await prisma.report.update({
+        where: { id: report.id },
+        data: {
+          approvalStatus: 'PENDING_REVIEW',
+          counselorReviewedAt: new Date(),
+          counselorReviewedById: userId,
+          reviewedAt: null,
+          reviewedById: null,
+          reviewNote: null,
+        },
+      });
+      return res.json(reviewed);
+    }
 
     if (status === 'REJECTED') {
       if (report.approvalStatus !== 'PENDING_REVIEW') {

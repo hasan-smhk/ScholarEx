@@ -6,26 +6,6 @@ declare const process: any;
 
 const prisma: any = new PrismaClient();
 
-async function seedCounselor(data: {
-  name: string;
-  email: string;
-  specialization: string;
-  description: string;
-}) {
-  const existingCounselor = await prisma.counselor.findFirst({
-    where: { email: data.email },
-  });
-
-  if (existingCounselor) {
-    return prisma.counselor.update({
-      where: { id: existingCounselor.id },
-      data,
-    });
-  }
-
-  return prisma.counselor.create({ data });
-}
-
 async function main() {
   const adminEmail = process.env.ADMIN_EMAIL?.trim();
   const adminPassword = process.env.ADMIN_PASSWORD;
@@ -115,21 +95,19 @@ async function main() {
     });
   }
 
-  // Counselors
-  await seedCounselor({
-    name: 'Dr. Meera Sharma',
-    email: 'counselor1@scholarex.com',
-    specialization: 'Career Guidance',
-    description: 'Expert in career planning, stream selection, and higher education guidance.',
+  // Retire the legacy sample counselor without deleting related booking history.
+  await prisma.counselor.updateMany({
+    where: { email: 'counselor1@scholarex.com', name: 'Syed Baqar' },
+    data: {
+      approvalStatus: 'REJECTED',
+      approvalReviewNote: 'Retired pre-seeded counselor profile.',
+    },
   });
 
-  await seedCounselor({
-    name: 'Mr. Ajay Verma',
-    email: 'counselor2@scholarex.com',
-    specialization: 'Skill Development',
-    description: 'Specialist in personal growth, employability skills, and certification pathways.',
+  await prisma.counselor.updateMany({
+    where: { email: 'counselor2@scholarex.com' },
+    data: { approvalStatus: 'REJECTED' },
   });
-
 }
 
 main()

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, Loader2, ArrowLeft, Download, Edit2, Save, CheckCircle2, Sparkles } from 'lucide-react';
-import { getReportByBooking, createReport, getBookingById, generateReportDraft } from '../services/api';
+import { getReportByBooking, createReport, getBookingById, generateReportDraft, reviewReport } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import ReportNotificationBanner from '../components/ReportNotificationBanner';
+import { COUNSELING_CHECKLIST } from '../data/counselingChecklist';
 
 interface Booking {
   id: string;
@@ -25,6 +26,7 @@ interface Booking {
   currentStream: string;
   careerAspiration: string | null;
   areasOfInterest: string | null;
+  sessionChecklistAnswers: Record<string, string> | null;
   report?: { approvalStatus: string } | null;
 }
 
@@ -36,7 +38,7 @@ interface Report {
   nextSteps: string;
   createdAt: string;
   updatedAt: string;
-  approvalStatus: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+  approvalStatus: 'COUNSELOR_REVIEW' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
   isAiGenerated: boolean;
   reviewNote: string | null;
 }
@@ -65,6 +67,7 @@ const CounselorReportPage: React.FC = () => {
   const [error, setError] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
   const isCounselor = user?.role === 'COUNSELOR' || user?.role === 'ADMIN';
 
@@ -120,7 +123,7 @@ const CounselorReportPage: React.FC = () => {
         }
         setReport(null);
         setIsAiGenerated(false);
-        setIsEditing(isCounselor);
+        setIsEditing(user?.role === 'COUNSELOR');
         setFormData({
           strengths: '',
           areasOfImprovement: '',
@@ -185,7 +188,9 @@ const CounselorReportPage: React.FC = () => {
       setNotification({
         show: true,
         type: 'success',
-        message: 'Report submitted for admin review. The student will be emailed after approval.',
+        message: user?.role === 'COUNSELOR'
+          ? 'Report saved. Review and approve it before it is sent to the administrator.'
+          : 'Report changes saved. The administrator must approve it before student delivery.',
       });
     } catch (err: any) {
       console.error(err);
@@ -196,6 +201,28 @@ const CounselorReportPage: React.FC = () => {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCounselorApproval = async () => {
+    if (!report || !token) return;
+    try {
+      setReviewing(true);
+      const { data } = await reviewReport(report.id, 'APPROVED', '', token);
+      setReport(data);
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'Report approved and sent to the administrator for review.',
+      });
+    } catch (requestError: any) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: requestError.response?.data?.error || 'Could not approve the report.',
+      });
+    } finally {
+      setReviewing(false);
     }
   };
 
@@ -302,7 +329,9 @@ const CounselorReportPage: React.FC = () => {
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div>
-                <h1 className="text-2xl font-extrabold text-gray-900">Counselor Report</h1>
+                <h1 className="text-2xl font-extrabold text-gray-900">
+                  {user?.role === 'ADMIN' ? 'Prepare Counselling Report' : 'Counsellor Report'}
+                </h1>
                 <p className="text-sm text-gray-500 mt-1">Student: <span className="font-bold">{booking.student.name}</span></p>
               </div>
             </div>
@@ -342,10 +371,33 @@ const CounselorReportPage: React.FC = () => {
           </div>
         </div>
 
+        {booking.sessionChecklistAnswers && (
+          <section className="mb-8 rounded-xl border border-gray-200 bg-white p-6">
+            <h2 className="mb-4 text-lg font-bold text-gray-900">Student session answers</h2>
+            <div className="space-y-5">
+              {COUNSELING_CHECKLIST.map((section) => (
+                <div key={section.title}>
+                  <h3 className="mb-2 font-bold text-slate-800">{section.title}</h3>
+                  <dl className="space-y-3">
+                    {section.questions.map((question) => (
+                      <div key={question.id} className="rounded-lg bg-slate-50 p-3">
+                        <dt className="text-sm font-semibold text-slate-800">{question.text}</dt>
+                        <dd className="mt-1 whitespace-pre-wrap text-sm text-slate-600">
+                          {booking.sessionChecklistAnswers?.[question.id] || 'Not provided'}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              {isEditing ? (<><Edit2 className="w-5 h-5" /> Edit Report</>) : report ? (<><FileText className="w-5 h-5" /> Report Content</>) : (<><FileText className="w-5 h-5" /> Create New Report</>)}
+              {isEditing ? (<><Edit2 className="w-5 h-5" /> {user?.role === 'ADMIN' ? 'AI Report Draft' : 'Edit Report'}</>) : report ? (<><FileText className="w-5 h-5" /> Report Content</>) : (<><FileText className="w-5 h-5" /> Create New Report</>)}
             </h2>
             {isCounselor && report && !isEditing && (
               <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors">
@@ -360,20 +412,26 @@ const CounselorReportPage: React.FC = () => {
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm text-violet-900">
-                    Generate a draft using only academic, interest, and subject details relevant to {booking.slot.counselor.specialization}.
-                    Family, contact, and demographic details are excluded. These selected details are sent to your configured AI provider.
+                    Selected academic and career responses are sent to your configured AI provider. Family, relationship, and emotional-wellbeing answers remain in ScholarEx and are excluded from AI generation. Review and edit the generated report before approval.
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleGenerateDraft}
-                    disabled={generating}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-sm font-bold text-white hover:bg-violet-800 disabled:opacity-60"
-                  >
-                    {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    {generating ? 'Generating...' : 'Generate AI draft'}
-                  </button>
+                  {user?.role === 'COUNSELOR' && (
+                    <button
+                      type="button"
+                      onClick={handleGenerateDraft}
+                      disabled={generating || loading}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-sm font-bold text-white hover:bg-violet-800 disabled:opacity-60"
+                    >
+                      {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {generating ? 'Generating...' : 'Generate AI draft'}
+                    </button>
+                  )}
                 </div>
                 {isAiGenerated && <p className="mt-2 text-xs font-semibold text-violet-800">AI-generated draft — review and edit before submission.</p>}
+                {user?.role === 'ADMIN' && (
+                  <p className="mt-2 text-xs font-semibold text-violet-900">
+                    Edit the report without bypassing the counselor or administrator approval stages.
+                  </p>
+                )}
               </div>
             )}
             <div>
@@ -398,8 +456,8 @@ const CounselorReportPage: React.FC = () => {
 
             {isEditing && (
               <div className="flex gap-4 pt-6">
-                <button type="submit" disabled={submitting} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">
-                  {submitting ? (<><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>) : (<><Save className="w-4 h-4" /> Save Changes</>)}
+                <button type="submit" disabled={submitting || generating} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">
+                  {submitting ? (<><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>) : (<><Save className="w-4 h-4" /> {user?.role === 'ADMIN' ? 'Save for admin approval' : 'Save Changes'}</>)}
                 </button>
                 <button type="button" onClick={() => { setIsEditing(false); if (report) { setFormData({ strengths: report.strengths, areasOfImprovement: report.areasOfImprovement, recommendations: report.recommendations, nextSteps: report.nextSteps }); } }} className="px-6 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">Cancel</button>
               </div>
@@ -411,7 +469,9 @@ const CounselorReportPage: React.FC = () => {
                 {report
                   ? 'Your report is approved'
                   : booking.report?.approvalStatus === 'PENDING_REVIEW'
-                    ? 'Your report is being reviewed'
+                    ? 'Your report is being reviewed by an administrator'
+                    : booking.report?.approvalStatus === 'COUNSELOR_REVIEW'
+                      ? 'Your counselor is reviewing the report'
                     : booking.report?.approvalStatus === 'REJECTED'
                       ? 'Your counselor is revising the report'
                       : 'Your report is not ready yet'}
@@ -419,7 +479,7 @@ const CounselorReportPage: React.FC = () => {
               <p className="mt-1 text-sm">
                 {report
                   ? 'The approved report is shown below.'
-                  : 'We will email you when your counselor submits the report and an administrator approves it.'}
+                  : 'We will email you after your counselor and an administrator have approved the report.'}
               </p>
             </div>
           )}
@@ -449,7 +509,9 @@ const CounselorReportPage: React.FC = () => {
                     ? 'Report approved'
                     : report.approvalStatus === 'REJECTED'
                       ? 'Changes requested'
-                      : 'Awaiting admin review'}
+                      : report.approvalStatus === 'COUNSELOR_REVIEW'
+                        ? 'Awaiting counselor approval'
+                        : 'Awaiting admin review'}
                 </h3>
               </div>
               <p className="text-indigo-700 mb-4">
@@ -457,8 +519,20 @@ const CounselorReportPage: React.FC = () => {
                   ? 'The student has been emailed and can view the report.'
                   : report.approvalStatus === 'REJECTED'
                     ? 'Update the report and submit it for review again.'
-                    : 'The student cannot view this report until an administrator approves it.'}
+                    : report.approvalStatus === 'COUNSELOR_REVIEW'
+                      ? 'Review the report and approve it to send it to the administrator.'
+                      : 'The student cannot view this report until an administrator approves it.'}
               </p>
+              {report.approvalStatus === 'COUNSELOR_REVIEW' && user?.role === 'COUNSELOR' && (
+                <button
+                  type="button"
+                  onClick={handleCounselorApproval}
+                  disabled={reviewing}
+                  className="mb-3 mr-3 rounded-lg bg-emerald-700 px-4 py-2 font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {reviewing ? 'Approving...' : 'Approve and send to admin'}
+                </button>
+              )}
               <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors"><Edit2 className="w-4 h-4" /> Edit Report</button>
             </div>
           )}

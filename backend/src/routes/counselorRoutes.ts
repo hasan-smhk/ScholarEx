@@ -1,13 +1,15 @@
 import express, { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
+  COUNSELING_SLOTS,
   counselingSlotIsInFuture,
-  ensureCounselingSchedule,
   isCounselingSlot,
   releaseExpiredCounselingReservations,
 } from '../services/counselingSchedule';
 import authMiddleware from '../middlewares/auth.middleware';
 import { getCounselorProfileIdForUser } from '../services/counselorAccess.service';
+import { sendSessionLinkEmail } from '../services/sessionLinkEmail.service';
+import { isCompleteCounselingChecklist } from '../services/counselingChecklist';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -159,9 +161,30 @@ router.get('/me/bookings', authMiddleware, counselorOnly, async (req: Request, r
         id: true,
         isFreeSession: true,
         paymentStatus: true,
+        cancellationStatus: true,
+        cancelledAt: true,
         amount: true,
         meetingLink: true,
+        meetingLinkEmailSentAt: true,
+        sessionChecklistAnswers: true,
+        sessionChecklistCompletedAt: true,
         marksPercentage: true,
+        studentName: true,
+        studentAge: true,
+        schoolCollege: true,
+        fatherName: true,
+        fatherAge: true,
+        fatherOcuupation: true,
+        fatherEducation: true,
+        motherName: true,
+        motherAge: true,
+        motherOcuupation: true,
+        motherEducation: true,
+        AnnualfamilyIncome: true,
+        familyType: true,
+        address: true,
+        phoneNo: true,
+        emailId: true,
         educationBackground: true,
         currentStream: true,
         careerAspiration: true,
@@ -169,7 +192,33 @@ router.get('/me/bookings', authMiddleware, counselorOnly, async (req: Request, r
         subjectPreferences: true,
         hobbies: true,
         subjectAssessments: true,
-        student: { select: { id: true, name: true, email: true } },
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            careerAssessment: {
+              select: {
+                studentClass: true,
+                schoolCollege: true,
+                phoneNumber: true,
+                educationBoard: true,
+                academicPerformance: true,
+                strongSubjects: true,
+                dislikedSubjects: true,
+                hobbies: true,
+                strengths: true,
+                improvementAreas: true,
+                coursesOfInterest: true,
+                learningStyle: true,
+                likes: true,
+                dislikes: true,
+                careerGoal: true,
+                parentsAspiration: true,
+              },
+            },
+          },
+        },
         slot: { select: { id: true, date: true, startTime: true, endTime: true } },
         report: { select: { createdAt: true, approvalStatus: true } },
       },
@@ -182,6 +231,61 @@ router.get('/me/bookings', authMiddleware, counselorOnly, async (req: Request, r
   }
 });
 
+router.put('/me/bookings/:bookingId/checklist', authMiddleware, counselorOnly, async (req: Request, res: Response) => {
+  try {
+    const counselorId = await getCounselorProfileIdForUser(prisma, req.user!.userId);
+    if (!counselorId) return res.status(404).json({ error: 'Counselor profile not found' });
+
+    const { answers } = req.body;
+    if (!isCompleteCounselingChecklist(answers) || JSON.stringify(answers).length > 50000) {
+      return res.status(400).json({ error: 'Answer every checklist question with no more than 3,000 characters per answer' });
+    }
+
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.bookingId, slot: { counselorId } },
+      select: {
+        id: true,
+        cancelledAt: true,
+        isFreeSession: true,
+        paymentStatus: true,
+        meetingLink: true,
+        meetingLinkEmailSentAt: true,
+        slot: { select: { date: true, startTime: true } },
+      },
+    });
+    if (!booking) return res.status(404).json({ error: 'Assigned appointment not found' });
+    if (booking.cancelledAt) {
+      return res.status(409).json({ error: 'The checklist cannot be completed for a cancelled appointment' });
+    }
+    if (!booking.isFreeSession && booking.paymentStatus !== 'PAID') {
+      return res.status(402).json({ error: 'Complete payment before recording session answers' });
+    }
+    if (!booking.meetingLink || !booking.meetingLinkEmailSentAt) {
+      return res.status(409).json({ error: 'The session link must be sent to the student before recording answers' });
+    }
+    if (counselingSlotIsInFuture(booking.slot.date, booking.slot.startTime)) {
+      return res.status(409).json({ error: 'The counselor checklist is available when the session starts' });
+    }
+
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        sessionChecklistAnswers: answers as Prisma.InputJsonValue,
+        sessionChecklistCompletedAt: new Date(),
+      },
+      select: {
+        id: true,
+        sessionChecklistAnswers: true,
+        sessionChecklistCompletedAt: true,
+      },
+    });
+    return res.json(updated);
+  } catch (error) {
+    console.error('Counseling session checklist save failed:', error);
+    return res.status(500).json({ error: 'Failed to save counseling session answers' });
+  }
+});
+
 router.patch('/me/bookings/:bookingId/meeting-link', authMiddleware, counselorOnly, async (req: Request, res: Response) => {
   try {
     const counselorId = await getCounselorProfileIdForUser(prisma, req.user!.userId);
@@ -189,22 +293,46 @@ router.patch('/me/bookings/:bookingId/meeting-link', authMiddleware, counselorOn
     const meetingLink = typeof req.body.meetingLink === 'string' ? req.body.meetingLink.trim() : '';
     if (meetingLink) {
       try {
-        if (new URL(meetingLink).protocol !== 'https:') throw new Error('invalid protocol');
+        const url = new URL(meetingLink);
+        const hostname = url.hostname.toLowerCase();
+        const isSupportedProvider =
+          hostname === 'meet.google.com' ||
+          hostname === 'zoom.us' ||
+          hostname.endsWith('.zoom.us');
+        if (url.protocol !== 'https:' || !isSupportedProvider) throw new Error('unsupported provider');
       } catch {
-        return res.status(400).json({ error: 'Meeting link must be a valid HTTPS URL' });
+        return res.status(400).json({ error: 'Enter a valid HTTPS Zoom or Google Meet link' });
       }
     }
     const booking = await prisma.booking.findFirst({
       where: { id: req.params.bookingId, slot: { counselorId } },
-      select: { id: true },
+      select: {
+        id: true,
+        cancelledAt: true,
+        meetingLink: true,
+        meetingLinkEmailSentAt: true,
+        isFreeSession: true,
+        paymentStatus: true,
+      },
     });
     if (!booking) return res.status(404).json({ error: 'Assigned appointment not found' });
+    if (booking.cancelledAt) {
+      return res.status(409).json({ error: 'Meeting links cannot be changed for a cancelled appointment' });
+    }
     const updated = await prisma.booking.update({
       where: { id: booking.id },
-      data: { meetingLink: meetingLink || null },
+      data: {
+        meetingLink: meetingLink || null,
+        ...(meetingLink !== booking.meetingLink ? { meetingLinkEmailSentAt: null } : {}),
+      },
       select: { id: true, meetingLink: true },
     });
-    res.json(updated);
+    const meetingLinkEmailDeferred =
+      Boolean(meetingLink) && !booking.isFreeSession && booking.paymentStatus !== 'PAID';
+    const meetingLinkEmailSent = meetingLink && !meetingLinkEmailDeferred
+      ? await sendSessionLinkEmail(booking.id)
+      : false;
+    res.json({ ...updated, meetingLinkEmailSent, meetingLinkEmailDeferred });
   } catch (error) {
     console.error('Counselor meeting link update failed:', error);
     res.status(500).json({ error: 'Failed to update meeting link' });
@@ -216,9 +344,12 @@ router.get('/me/slots', authMiddleware, counselorOnly, async (req: Request, res:
     const counselorId = await getCounselorProfileIdForUser(prisma, req.user!.userId);
     if (!counselorId) return res.status(404).json({ error: 'Counselor profile not found' });
     await releaseExpiredCounselingReservations(prisma);
-    await ensureCounselingSchedule(prisma);
     const slots = await prisma.slot.findMany({
-      where: { counselorId, isBooked: false, date: { gte: getStartOfTodayUtc() } },
+      where: {
+        counselorId,
+        date: { gte: getStartOfTodayUtc() },
+        OR: [{ isAvailable: true }, { isBooked: true }],
+      },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
     res.json(slots.filter((slot) => isCounselingSlot(slot.date, slot.startTime, slot.endTime)
@@ -229,11 +360,82 @@ router.get('/me/slots', authMiddleware, counselorOnly, async (req: Request, res:
   }
 });
 
+router.put('/me/availability', authMiddleware, counselorOnly, async (req: Request, res: Response) => {
+  try {
+    const counselorId = await getCounselorProfileIdForUser(prisma, req.user!.userId);
+    if (!counselorId) return res.status(404).json({ error: 'Counselor profile not found' });
+
+    const { date: dateValue, startTimes } = req.body as { date?: unknown; startTimes?: unknown };
+    if (typeof dateValue !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateValue) || !Array.isArray(startTimes)) {
+      return res.status(400).json({ error: 'Choose a valid date and availability times' });
+    }
+
+    const date = new Date(`${dateValue}T00:00:00.000Z`);
+    if (date.toISOString().slice(0, 10) !== dateValue) {
+      return res.status(400).json({ error: 'Choose a valid date' });
+    }
+    if (date.getUTCDay() === 0 || date.getUTCDay() === 6) {
+      return res.status(400).json({ error: 'Availability can only be set for weekdays' });
+    }
+    const allowedStartTimes = new Set(COUNSELING_SLOTS.map((slot) => slot.startTime));
+    if (startTimes.some((time) => typeof time !== 'string' || !allowedStartTimes.has(time))) {
+      return res.status(400).json({ error: 'Availability must be between 5:00 PM and 8:00 PM' });
+    }
+    const selectedTimes = [...new Set(startTimes as string[])];
+    if (selectedTimes.some((time) => !counselingSlotIsInFuture(date, time))) {
+      return res.status(400).json({ error: 'Availability must be set for a future time' });
+    }
+
+    await prisma.$transaction(async (transaction) => {
+      await transaction.slot.updateMany({
+        where: {
+          counselorId,
+          date,
+          isAvailable: true,
+          ...(selectedTimes.length ? { startTime: { notIn: selectedTimes } } : {}),
+        },
+        data: { isAvailable: false },
+      });
+
+      for (const startTime of selectedTimes) {
+        const slot = COUNSELING_SLOTS.find((candidate) => candidate.startTime === startTime)!;
+        await transaction.slot.upsert({
+          where: {
+            counselorId_date_startTime_endTime: {
+              counselorId,
+              date,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+            },
+          },
+          update: { isAvailable: true },
+          create: { counselorId, date, ...slot, isAvailable: true },
+        });
+      }
+    });
+
+    const slots = await prisma.slot.findMany({
+      where: {
+        counselorId,
+        date: { gte: getStartOfTodayUtc() },
+        OR: [{ isAvailable: true }, { isBooked: true }],
+      },
+      orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+    });
+    res.json(slots.filter((slot) =>
+      isCounselingSlot(slot.date, slot.startTime, slot.endTime) &&
+      counselingSlotIsInFuture(slot.date, slot.startTime)
+    ));
+  } catch (error) {
+    console.error('Counselor availability update failed:', error);
+    res.status(500).json({ error: 'Failed to update counselor availability' });
+  }
+});
+
 // GET all counselors
 router.get('/', async (req: Request, res: Response) => {
   try {
     await releaseExpiredCounselingReservations(prisma);
-    await ensureCounselingSchedule(prisma);
     const today = getStartOfTodayUtc();
     const counselors = await prisma.counselor.findMany({
       where: { approvalStatus: 'APPROVED' },
@@ -245,6 +447,7 @@ router.get('/', async (req: Request, res: Response) => {
         sessionFee: true,
         slots: {
           where: {
+            isAvailable: true,
             isBooked: false,
             date: { gte: today },
           },
@@ -271,7 +474,6 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     await releaseExpiredCounselingReservations(prisma);
-    await ensureCounselingSchedule(prisma);
     const { id } = req.params;
     const today = getStartOfTodayUtc();
     const counselor = await prisma.counselor.findFirst({
@@ -284,6 +486,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         sessionFee: true,
         slots: {
           where: {
+            isAvailable: true,
             isBooked: false,
             date: { gte: today },
           },
@@ -311,13 +514,13 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.get('/:id/slots', async (req: Request, res: Response) => {
   try {
     await releaseExpiredCounselingReservations(prisma);
-    await ensureCounselingSchedule(prisma);
     const { id } = req.params;
     const today = getStartOfTodayUtc();
     const slots = await prisma.slot.findMany({
       where: {
         counselorId: id,
         counselor: { approvalStatus: 'APPROVED' },
+        isAvailable: true,
         isBooked: false,
         date: { gte: today },
       },

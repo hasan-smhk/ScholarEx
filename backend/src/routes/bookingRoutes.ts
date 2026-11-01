@@ -3,7 +3,6 @@ import { PrismaClient, PaymentStatus } from '@prisma/client';
 import authMiddleware from '../middlewares/auth.middleware';
 import {
   counselingSlotIsInFuture,
-  ensureCounselingSchedule,
   isCounselingSlot,
   releaseExpiredCounselingReservations,
 } from '../services/counselingSchedule';
@@ -62,65 +61,37 @@ function getCounselingMatchScore(
 // POST: Create a new booking
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const intake = req.body as Record<string, unknown>;
-    const studentId = (req as any).user.userId;
+    if (req.user!.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only students can create counseling bookings' });
+    }
+    const studentId = req.user!.userId;
+    const assessment = await prisma.studentCareerAssessment.findUnique({ where: { studentId } });
+    if (!assessment?.report) {
+      return res.status(409).json({ error: 'Complete your free career report before booking a counseling session' });
+    }
+
     const preferredCounselorId =
-      typeof intake.preferredCounselorId === 'string' ? intake.preferredCounselorId : undefined;
-    const marksPercentage = Number(intake.marksPercentage);
-
-    const requiredFields = [
-      'studentName',
-      'schoolCollege',
-      'familyType',
-      'address',
-      'phoneNo',
-      'emailId',
-      'educationBackground',
-      'currentStream',
-      'careerAspiration',
-    ];
-    if (
-      requiredFields.some(
-        (field) => typeof intake[field] !== 'string' || !(intake[field] as string).trim()
-      ) ||
-      [intake.studentAge, intake.fatherAge, intake.motherAge].some(
-        (age, index) =>
-          (index === 0 || (age !== undefined && age !== null && age !== '')) &&
-          (!Number.isInteger(Number(age)) || Number(age) < 1 || Number(age) > 120)
-      )
-    ) {
-      return res.status(400).json({ error: 'Complete all required counseling form fields' });
-    }
-
-    if (!Number.isFinite(marksPercentage) || marksPercentage < 0 || marksPercentage > 100) {
-      return res.status(400).json({ error: 'Marks percentage must be between 0 and 100' });
-    }
-    const annualFamilyIncome = Number(intake.AnnualfamilyIncome);
-    if (!Number.isInteger(annualFamilyIncome) || annualFamilyIncome < 0) {
-      return res.status(400).json({ error: 'Annual family income must be a non-negative whole number' });
-    }
-
-    if (
-      intake.subjectAssessments !== undefined &&
-      (!Array.isArray(intake.subjectAssessments) ||
-        intake.subjectAssessments.some(
-          (assessment) =>
-            !assessment ||
-            typeof assessment.subject !== 'string' ||
-            typeof assessment.overall !== 'string' ||
-            typeof assessment.comments !== 'string'
-        ))
-    ) {
-      return res.status(400).json({ error: 'Subject assessments are invalid' });
-    }
+      typeof req.body.preferredCounselorId === 'string' ? req.body.preferredCounselorId : undefined;
+    const intake = {
+      educationBackground: assessment.educationBoard,
+      currentStream: assessment.studentClass,
+      careerAspiration: assessment.careerGoal,
+      areasOfInterest: [assessment.likes, assessment.hobbies, assessment.coursesOfInterest]
+        .filter(Boolean)
+        .join('; '),
+      subjectPreferences: [
+        assessment.strongSubjects && `Enjoyed/strong subjects: ${assessment.strongSubjects}`,
+        assessment.dislikedSubjects && `Subjects for support: ${assessment.dislikedSubjects}`,
+      ].filter(Boolean).join('; '),
+      hobbies: assessment.hobbies,
+    };
 
     await releaseExpiredCounselingReservations(prisma);
-    await ensureCounselingSchedule(prisma);
     const excludedSlotIds = new Set<string>();
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const availableSlots = await prisma.slot.findMany({
-        where: { isBooked: false, counselor: { approvalStatus: 'APPROVED' } },
+        where: { isAvailable: true, isBooked: false, counselor: { approvalStatus: 'APPROVED' } },
         include: { counselor: true },
       });
       const rankedSlots = availableSlots
@@ -146,71 +117,35 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       const slot = rankedSlots[0];
       try {
         const booking = await prisma.$transaction(async (transaction) => {
-          const student = await transaction.user.findUnique({ where: { id: studentId } });
+          const student = await transaction.user.findUnique({
+            where: { id: studentId },
+            select: { name: true, email: true },
+          });
           if (!student) throw new Error('STUDENT_NOT_FOUND');
 
           const reserved = await transaction.slot.updateMany({
-            where: { id: slot.id, isBooked: false },
+            where: { id: slot.id, isAvailable: true, isBooked: false },
             data: { isBooked: true },
           });
           if (reserved.count !== 1) throw new Error('SLOT_UNAVAILABLE');
-
-          const isFreeSession = !student.hasUsedFreeSession;
-          if (isFreeSession) {
-            const freeSessionClaim = await transaction.user.updateMany({
-              where: { id: studentId, hasUsedFreeSession: false },
-              data: { hasUsedFreeSession: true },
-            });
-            if (freeSessionClaim.count !== 1) throw new Error('SLOT_UNAVAILABLE');
-          }
-
-          await transaction.user.update({
-            where: { id: studentId },
-            data: { marksPercentage },
-          });
 
           return transaction.booking.create({
             data: {
               studentId,
               slotId: slot.id,
-              isFreeSession,
-              paymentStatus: isFreeSession ? PaymentStatus.PAID : PaymentStatus.PENDING,
-              amount: isFreeSession ? 0 : slot.counselor.sessionFee,
-              marksPercentage,
-              educationBackground: intake.educationBackground as string,
-              currentStream: intake.currentStream as string,
-              careerAspiration: intake.careerAspiration as string,
-              areasOfInterest: typeof intake.areasOfInterest === 'string' ? intake.areasOfInterest : null,
-              subjectPreferences:
-                typeof intake.subjectPreferences === 'string'
-                  ? intake.subjectPreferences
-                  : Array.isArray(intake.subjectAssessments)
-                    ? intake.subjectAssessments.map((assessment) => assessment.subject).join(', ')
-                    : null,
-              hobbies: typeof intake.hobbies === 'string' ? intake.hobbies : null,
-              studentName: intake.studentName as string,
-              studentAge: Number(intake.studentAge),
-              schoolCollege: intake.schoolCollege as string,
-              fatherName: typeof intake.fatherName === 'string' ? intake.fatherName : null,
-              fatherAge: normalizeOptionalAge(intake.fatherAge),
-              fatherOcuupation:
-                typeof intake.fatherOccupation === 'string' ? intake.fatherOccupation : null,
-              fatherEducation:
-                typeof intake.fatherEducation === 'string' ? intake.fatherEducation : null,
-              motherName: typeof intake.motherName === 'string' ? intake.motherName : null,
-              motherAge: normalizeOptionalAge(intake.motherAge),
-              motherOcuupation:
-                typeof intake.motherOccupation === 'string' ? intake.motherOccupation : null,
-              motherEducation:
-                typeof intake.motherEducation === 'string' ? intake.motherEducation : null,
-              AnnualfamilyIncome: annualFamilyIncome,
-              familyType: intake.familyType as string,
-              address: intake.address as string,
-              phoneNo: intake.phoneNo as string,
-              emailId: intake.emailId as string,
-              subjectAssessments: Array.isArray(intake.subjectAssessments)
-                ? intake.subjectAssessments
-                : undefined,
+              isFreeSession: false,
+              paymentStatus: PaymentStatus.PENDING,
+              amount: slot.counselor.sessionFee,
+              educationBackground: assessment.educationBoard,
+              currentStream: assessment.studentClass,
+              careerAspiration: assessment.careerGoal || null,
+              areasOfInterest: intake.areasOfInterest || null,
+              subjectPreferences: intake.subjectPreferences || null,
+              hobbies: assessment.hobbies || null,
+              studentName: student.name,
+              schoolCollege: assessment.schoolCollege,
+              phoneNo: assessment.phoneNumber,
+              emailId: student.email,
             },
             include: {
               slot: { include: { counselor: true } },
@@ -241,6 +176,9 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 // GET: Get student's bookings
 router.get('/my-bookings', authMiddleware, async (req: Request, res: Response) => {
   try {
+    if (req.user!.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Student bookings are only available to students' });
+    }
     const studentId = (req as any).user.userId;
 
     const bookings = await prisma.booking.findMany({
@@ -249,9 +187,36 @@ router.get('/my-bookings', authMiddleware, async (req: Request, res: Response) =
         id: true,
         isFreeSession: true,
         paymentStatus: true,
+        cancellationStatus: true,
+        cancellationReviewNote: true,
+        cancelledAt: true,
+        refundReference: true,
         amount: true,
         marksPercentage: true,
         meetingLink: true,
+        studentName: true,
+        studentAge: true,
+        schoolCollege: true,
+        phoneNo: true,
+        emailId: true,
+        address: true,
+        educationBackground: true,
+        currentStream: true,
+        careerAspiration: true,
+        areasOfInterest: true,
+        subjectPreferences: true,
+        hobbies: true,
+        fatherName: true,
+        fatherAge: true,
+        fatherOcuupation: true,
+        fatherEducation: true,
+        motherName: true,
+        motherAge: true,
+        motherOcuupation: true,
+        motherEducation: true,
+        AnnualfamilyIncome: true,
+        familyType: true,
+        subjectAssessments: true,
         createdAt: true,
         slot: {
           select: {
@@ -266,14 +231,78 @@ router.get('/my-bookings', authMiddleware, async (req: Request, res: Response) =
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json(bookings);
+    res.json(bookings.map((booking) => ({
+      ...booking,
+      meetingLink:
+        !booking.cancelledAt &&
+        (booking.isFreeSession || booking.paymentStatus === PaymentStatus.PAID)
+          ? booking.meetingLink
+          : null,
+    })));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch bookings' });
   }
 });
 
+router.post('/:id/cancellation', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only students can request booking cancellation' });
+    }
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: { slot: true },
+    });
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.studentId !== req.user!.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (booking.paymentStatus !== 'PAID' || booking.cancelledAt) {
+      return res.status(409).json({ error: 'Only active, confirmed bookings can be cancelled' });
+    }
+    if (!counselingSlotIsInFuture(booking.slot.date, booking.slot.startTime)) {
+      return res.status(409).json({ error: 'Cancellation requests must be submitted before the session starts' });
+    }
+    if (booking.cancellationStatus === 'REQUESTED') {
+      return res.status(409).json({ error: 'A cancellation request is already awaiting review' });
+    }
+    if (booking.cancellationStatus === 'APPROVED') {
+      return res.status(409).json({ error: 'This booking has already been cancelled' });
+    }
+
+    const updated = await prisma.booking.updateMany({
+      where: {
+        id: booking.id,
+        studentId: req.user!.userId,
+        paymentStatus: 'PAID',
+        cancellationStatus: booking.cancellationStatus,
+        cancelledAt: null,
+      },
+      data: {
+        cancellationStatus: 'REQUESTED',
+        cancellationRequestedAt: new Date(),
+        cancellationReviewedAt: null,
+        cancellationReviewNote: null,
+      },
+    });
+    if (updated.count !== 1) {
+      return res.status(409).json({ error: 'Booking status changed. Refresh and try again.' });
+    }
+
+    return res.json({
+      message: 'Cancellation request submitted. An administrator will review it; any eligible refund is handled manually.',
+      cancellationStatus: 'REQUESTED',
+    });
+  } catch (error) {
+    console.error('Booking cancellation request failed:', error);
+    return res.status(500).json({ error: 'Could not submit cancellation request' });
+  }
+});
+
 router.get('/eligibility', authMiddleware, async (req: Request, res: Response) => {
   try {
+    if (req.user!.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Counseling eligibility is only available to students' });
+    }
     const student = await prisma.user.findUnique({
       where: { id: (req as any).user.userId },
       select: { hasUsedFreeSession: true, marksPercentage: true },
@@ -299,6 +328,14 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
         studentId: true,
         isFreeSession: true,
         paymentStatus: true,
+        cancellationStatus: true,
+        cancellationReviewNote: true,
+        cancelledAt: true,
+        razorpayOrderId: true,
+        razorpayPaymentId: true,
+        studentPaymentEmailSentAt: true,
+        counselorPaymentEmailSentAt: true,
+        createdAt: true,
         amount: true,
         marksPercentage: true,
         educationBackground: true,
@@ -307,6 +344,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
         areasOfInterest: true,
         subjectPreferences: true,
         hobbies: true,
+        sessionChecklistAnswers: true,
+        sessionChecklistCompletedAt: true,
         slot: {
           select: {
             id: true,
@@ -346,6 +385,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 // PUT: Submit post-booking form details
 router.put('/:id/details', authMiddleware, async (req: Request, res: Response) => {
   try {
+    if (req.user!.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only students can update booking details' });
+    }
     const { id } = req.params;
     const studentId = (req as any).user.userId;
     const {

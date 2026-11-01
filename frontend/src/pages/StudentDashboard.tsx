@@ -16,6 +16,7 @@ import {
   Settings,
   LogOut,
   Users,
+  CreditCard,
 } from 'lucide-react';
 import { getMyBookings, getMyEnrollments } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -41,7 +42,10 @@ interface Booking {
   id: string;
   isFreeSession: boolean;
   paymentStatus: string;
+  cancellationStatus: string;
+  cancelledAt: string | null;
   amount: number;
+  meetingLink: string | null;
   marksPercentage?: number | null;
   createdAt: string;
   report?: { createdAt: string; approvalStatus: string } | null;
@@ -199,8 +203,11 @@ const EnrollmentCard = ({ enrollment }: { enrollment: Enrollment }) => {
 
 // ─── Booking Card ─────────────────────────────────────────────────────────────
 const BookingCard = ({ booking, onViewReport }: { booking: Booking; onViewReport: (id: string) => void }) => {
-  const isPast = new Date(booking.slot.date) < new Date();
-  const isConfirmed = booking.paymentStatus === 'PAID';
+  const sessionDate = new Date(booking.slot.date).toISOString().slice(0, 10);
+  const sessionStart = new Date(`${sessionDate}T${booking.slot.startTime}:00+05:30`);
+  const isPast = sessionStart.getTime() <= Date.now();
+  const isCancelled = Boolean(booking.cancelledAt);
+  const isConfirmed = (booking.isFreeSession || booking.paymentStatus === 'PAID') && !isCancelled;
 
   return (
     <div className="scholar-panel-card bg-white rounded-[24px] border border-gray-100 overflow-hidden shadow-sm hover:shadow-lg transition-all">
@@ -214,10 +221,11 @@ const BookingCard = ({ booking, onViewReport }: { booking: Booking; onViewReport
           </div>
           <span
             className={`px-3 py-1 rounded-full text-xs font-bold ${
-              isConfirmed ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+              isCancelled ? 'bg-slate-100 text-slate-600' :
+                isConfirmed ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
             }`}
           >
-            {isConfirmed ? 'Confirmed' : 'Pending'}
+            {isCancelled ? 'Cancelled' : isConfirmed ? 'Confirmed' : 'Pending'}
           </span>
         </div>
       </div>
@@ -244,7 +252,11 @@ const BookingCard = ({ booking, onViewReport }: { booking: Booking; onViewReport
 
       {/* Actions */}
       <div className="p-6 border-t border-gray-100 flex gap-3">
-        {isPast && booking.report ? (
+        {isCancelled ? (
+          <span className="flex-1 bg-slate-50 text-slate-500 font-bold py-3 rounded-2xl text-center">
+            Session cancelled
+          </span>
+        ) : isPast && booking.report ? (
           <button
             onClick={() => onViewReport(booking.id)}
             className="flex-1 bg-indigo-50 text-indigo-600 font-bold py-3 rounded-2xl hover:bg-indigo-100 transition-colors flex items-center justify-center gap-2"
@@ -254,16 +266,27 @@ const BookingCard = ({ booking, onViewReport }: { booking: Booking; onViewReport
               ? 'View Report'
               : booking.report.approvalStatus === 'REJECTED'
                 ? 'Track Report Updates'
-                : 'Awaiting Admin Review'}
+                : booking.report.approvalStatus === 'COUNSELOR_REVIEW'
+                  ? 'Awaiting Counselor Review'
+                  : 'Awaiting Admin Review'}
           </button>
         ) : isPast ? (
           <button disabled className="flex-1 bg-gray-50 text-gray-400 font-bold py-3 rounded-2xl">
             Session Complete
           </button>
-        ) : (
-          <button className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-2xl hover:bg-indigo-700 transition-colors">
+        ) : isConfirmed && booking.meetingLink ? (
+          <a
+            href={booking.meetingLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-2xl hover:bg-indigo-700 transition-colors text-center"
+          >
             Join Session
-          </button>
+          </a>
+        ) : (
+          <span className="flex-1 bg-gray-50 text-gray-500 font-semibold py-3 rounded-2xl text-center">
+            {!isConfirmed ? 'Complete payment to join' : 'Meeting link not shared yet'}
+          </span>
         )}
       </div>
     </div>
@@ -310,7 +333,7 @@ export default function StudentDashboard() {
     enrollments.length > 0
       ? Math.round(enrollments.reduce((sum, e) => sum + e.progress, 0) / enrollments.length)
       : 0;
-  const upcomingSessions = bookings.filter((b) => new Date(b.slot.date) >= new Date()).length;
+  const upcomingSessions = bookings.filter((b) => !b.cancelledAt && new Date(b.slot.date) >= new Date()).length;
   const latestMarksPercentage =
     bookings.find((booking) => booking.marksPercentage != null)?.marksPercentage ?? user?.marksPercentage;
 
@@ -485,15 +508,41 @@ export default function StudentDashboard() {
               {/* Book Session Card */}
               <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-[24px] p-6 text-white shadow-lg">
                 <Calendar className="w-8 h-8 mb-4 opacity-80" />
-                <h3 className="text-xl font-black mb-2">Book a Session</h3>
+                <h3 className="text-xl font-black mb-2">Start with a free career report</h3>
                 <p className="text-indigo-100 text-sm leading-relaxed mb-6">
-                  Get personalized guidance from our expert counselors. Claim your free session today.
+                  Start with your free career report. Book a paid counseling session when you are ready for one-to-one guidance.
                 </p>
                 <Link
-                  to="/counseling"
+                  to="/counselors"
                   className="block text-center bg-white text-indigo-600 font-bold py-3 rounded-2xl hover:bg-indigo-50 transition-colors"
                 >
-                  Book Now
+                  Get your free report
+                </Link>
+              </div>
+
+              <div className="rounded-[24px] border border-teal-100 bg-teal-50 p-6">
+                <div className="mb-3 flex items-center gap-2 text-teal-800">
+                  <FileText className="h-5 w-5" />
+                  <h3 className="font-black">Your career report</h3>
+                </div>
+                <p className="mb-4 text-sm leading-relaxed text-teal-900">
+                  View and download your free report, then use it to decide whether to book a paid counseling session.
+                </p>
+                <Link to="/my-career-report" className="font-bold text-teal-800 hover:text-teal-950">
+                  Create or view your free report →
+                </Link>
+              </div>
+
+              <div className="rounded-[24px] border border-indigo-100 bg-indigo-50 p-6">
+                <div className="mb-3 flex items-center gap-2 text-indigo-800">
+                  <CreditCard className="h-5 w-5" />
+                  <h3 className="font-black">Paid counseling sessions</h3>
+                </div>
+                <p className="mb-4 text-sm leading-relaxed text-indigo-900">
+                  Book a counseling slot by choosing a counselor and completing payment.
+                </p>
+                <Link to="/counselors" className="font-bold text-indigo-800 hover:text-indigo-950">
+                  Book counseling slots (payment required) →
                 </Link>
               </div>
 
@@ -517,12 +566,12 @@ export default function StudentDashboard() {
               {/* Recent Reports */}
               <div className="scholar-panel-card bg-white rounded-[24px] p-6 border border-gray-100 shadow-sm">
                 <h3 className="font-black text-gray-900 mb-4">Recent Reports</h3>
-                {bookings.filter((b) => b.report).length === 0 ? (
+                {bookings.filter((b) => b.report && !b.cancelledAt).length === 0 ? (
                   <p className="text-gray-500 text-sm">No reports yet.</p>
                 ) : (
                   <div className="space-y-3">
                     {bookings
-                      .filter((b) => b.report)
+                      .filter((b) => b.report && !b.cancelledAt)
                       .slice(0, 2)
                       .map((booking) => (
                         <button
@@ -536,7 +585,9 @@ export default function StudentDashboard() {
                               ? `Approved ${formatDate(booking.report!.createdAt)}`
                               : booking.report!.approvalStatus === 'REJECTED'
                                 ? 'Counselor revisions requested'
-                                : 'Awaiting admin approval'}
+                                : booking.report!.approvalStatus === 'COUNSELOR_REVIEW'
+                                  ? 'Awaiting counselor approval'
+                                  : 'Awaiting administrator approval'}
                           </p>
                         </button>
                       ))}
@@ -605,8 +656,8 @@ export default function StudentDashboard() {
               <EmptyState
                 icon={Calendar}
                 title="No sessions booked"
-                message="Book a counselling session to get personalized guidance."
-                cta={{ label: 'Book a Session', href: '/counseling' }}
+                message="Create your free career report, then choose a counselor and pay to reserve a session."
+                cta={{ label: 'Book a Session', href: '/counselors' }}
               />
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">

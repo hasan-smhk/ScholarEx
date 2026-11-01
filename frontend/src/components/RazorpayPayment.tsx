@@ -3,6 +3,7 @@ import { Loader2, X } from 'lucide-react';
 import {
   createPaymentOrder,
   verifyPayment,
+  recoverBookingPayment,
 } from '../services/api';
 
 declare global {
@@ -20,7 +21,10 @@ interface RazorpayPaymentProps {
   studentName: string;
   studentEmail: string;
   token: string;
-  onSuccess: (paymentId: string) => void;
+  onSuccess: (
+    paymentId: string,
+    emailNotifications?: { studentSent: boolean; counselorSent: boolean }
+  ) => void;
   onClose?: () => void;
   onCancel?: () => void;
 }
@@ -86,7 +90,7 @@ const RazorpayPayment = ({
 
           // Step 3: Verify payment on backend
           try {
-            await verifyPayment(
+            const verification = await verifyPayment(
               orderId,
               response.razorpay_payment_id,
               response.razorpay_signature,
@@ -95,9 +99,29 @@ const RazorpayPayment = ({
             );
 
             successHandledRef.current = true;
-            onSuccess(response.razorpay_payment_id);
+            onSuccess(response.razorpay_payment_id, verification.data?.emailNotifications);
           } catch (err: any) {
             verificationInProgressRef.current = false;
+            // If verify-payment failed (e.g. race with webhook or network timeout), attempt recovery
+            try {
+              const recovery = await recoverBookingPayment(bookingId, token);
+              if (recovery.data?.recovered || recovery.data?.booking?.paymentStatus === 'PAID') {
+                successHandledRef.current = true;
+                onSuccess(response.razorpay_payment_id, recovery.data.emailNotifications);
+                return;
+              }
+            } catch (recoveryErr: any) {
+              console.warn('Auto-recovery check failed:', recoveryErr);
+              const reference = recoveryErr?.response?.data?.paymentReference;
+              if (reference?.paymentId || reference?.orderId) {
+                setError(
+                  `Payment could not be confirmed automatically. Contact support with booking ${reference.bookingId || bookingId}` +
+                  (reference.paymentId ? ` and Razorpay payment ${reference.paymentId}` : '') +
+                  (reference.orderId ? ` (order ${reference.orderId})` : '')
+                );
+                return;
+              }
+            }
             setError(err?.response?.data?.error || 'Payment verification failed');
           } finally {
             paymentInProgressRef.current = false;

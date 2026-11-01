@@ -1,12 +1,132 @@
 import express, { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config';
-import { sendEmail, counselorApplicationReceivedEmail } from '../services/email.service';
+import {
+  sendEmail,
+  counselorApplicationReceivedEmail,
+  passwordResetEmail,
+  studentRegistrationConfirmationEmail,
+} from '../services/email.service';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const passwordResetTokenLifetimeMs = 60 * 60 * 1000;
+
+const hashPasswordResetToken = (token: string) =>
+  crypto.createHash('sha256').update(token).digest('hex');
+
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  const normalizedEmail = typeof req.body?.email === 'string'
+    ? req.body.email.trim().toLowerCase()
+    : '';
+  if (!normalizedEmail || normalizedEmail.length > 254 || !/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        email: { equals: normalizedEmail, mode: 'insensitive' },
+        role: { in: ['STUDENT', 'COUNSELOR'] },
+      },
+      select: { id: true, name: true, email: true },
+    });
+
+    if (user) {
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = hashPasswordResetToken(resetToken);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetTokenHash: tokenHash,
+          passwordResetTokenExpiresAt: new Date(Date.now() + passwordResetTokenLifetimeMs),
+        },
+      });
+
+      const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+      const resetLink = `${frontendUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
+      try {
+        await sendEmail({
+          to: user.email,
+          ...passwordResetEmail(user.name, resetLink),
+        });
+      } catch (emailError) {
+        console.error(`Password reset email delivery failed for user ${user.id}:`, emailError);
+        await prisma.user.updateMany({
+          where: { id: user.id, passwordResetTokenHash: tokenHash },
+          data: { passwordResetTokenHash: null, passwordResetTokenExpiresAt: null },
+        });
+        return res.status(503).json({ error: 'Password reset email could not be sent. Please try again later.' });
+      }
+    }
+
+    return res.json({
+      message: 'If an account exists for this email, a password reset link has been sent.',
+    });
+  } catch (error) {
+    console.error('Password reset request failed:', error);
+    return res.status(500).json({ error: 'Could not process your password reset request' });
+  }
+});
+
+router.post('/reset-password', async (req: Request, res: Response) => {
+  const { token, password } = req.body ?? {};
+  if (
+    typeof token !== 'string' ||
+    !/^[a-f0-9]{64}$/i.test(token) ||
+    typeof password !== 'string' ||
+    password.length < 6 ||
+    password.length > 128
+  ) {
+    return res.status(400).json({ error: 'Provide a valid reset link and a password between 6 and 128 characters' });
+  }
+
+  try {
+    const tokenHash = hashPasswordResetToken(token);
+    const now = new Date();
+    const user = await prisma.user.findUnique({
+      where: { passwordResetTokenHash: tokenHash },
+      select: {
+        id: true,
+        role: true,
+        passwordResetTokenExpiresAt: true,
+      },
+    });
+    if (
+      !user ||
+      user.role === 'ADMIN' ||
+      !user.passwordResetTokenExpiresAt ||
+      user.passwordResetTokenExpiresAt <= now
+    ) {
+      return res.status(400).json({ error: 'This password reset link is invalid or has expired. Request a new one.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const updated = await prisma.user.updateMany({
+      where: {
+        id: user.id,
+        passwordResetTokenHash: tokenHash,
+        passwordResetTokenExpiresAt: { gt: now },
+      },
+      data: {
+        password: hashedPassword,
+        passwordResetTokenHash: null,
+        passwordResetTokenExpiresAt: null,
+      },
+    });
+    if (updated.count !== 1) {
+      return res.status(400).json({ error: 'This password reset link is invalid or has expired. Request a new one.' });
+    }
+
+    return res.json({ message: 'Password updated successfully. You can now sign in.' });
+  } catch (error) {
+    console.error('Password reset failed:', error);
+    return res.status(500).json({ error: 'Could not reset your password' });
+  }
+});
 
 // POST: Register
 router.post('/register', async (req: Request, res: Response) => {
@@ -156,6 +276,7 @@ router.post('/register', async (req: Request, res: Response) => {
     });
     const user = result.user;
     let applicationEmailSent = true;
+    let confirmationEmailSent: boolean | null = null;
     if (result.counselorId) {
       try {
         await sendEmail({
@@ -170,6 +291,17 @@ router.post('/register', async (req: Request, res: Response) => {
         applicationEmailSent = false;
         console.error('Counselor application confirmation email failed:', emailError);
       }
+    } else {
+      confirmationEmailSent = false;
+      try {
+        await sendEmail({
+          to: normalizedEmail,
+          ...studentRegistrationConfirmationEmail(normalizedName),
+        });
+        confirmationEmailSent = true;
+      } catch (emailError) {
+        console.error('Student registration confirmation email failed:', emailError);
+      }
     }
 
     const token = jwt.sign(
@@ -179,10 +311,15 @@ router.post('/register', async (req: Request, res: Response) => {
     );
 
     res.status(201).json({
-      message: applicationEmailSent
-        ? 'User registered successfully'
-        : 'Account created, but the application confirmation email could not be sent. An administrator can retry it.',
+      message: result.counselorId
+        ? applicationEmailSent
+          ? 'Counselor application submitted successfully'
+          : 'Application created, but the confirmation email could not be sent. An administrator can retry it.'
+        : confirmationEmailSent
+          ? 'Student registered successfully. A confirmation email has been sent.'
+          : 'Student account created, but the confirmation email could not be sent. You can still sign in.',
       applicationEmailSent,
+      confirmationEmailSent,
       user: {
         id: user.id,
         name: user.name,

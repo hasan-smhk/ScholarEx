@@ -11,16 +11,16 @@ import BookingCompletePage from './pages/BookingCompletePage';
 import MyBookingsPage from './pages/MyBookingsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import CoursesPage from './pages/CoursesPage';
-import CBSEPage from './pages/CBSEPage';
-import ICSEPage from './pages/ICSEPage';
-import StateBoardPage from './pages/StateBoardPage';
-import CourseDetailPage from './pages/CourseDetailPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import ComingSoonPage from './pages/ComingSoonPage';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminPanel from './pages/AdminPanel';
 import CounselorReportPage from './pages/CounselorReportPage';
 import CounselorDashboard from './pages/CounselorDashboard';
-import SkillDevelopmentPage from './pages/SkillDevelopmentPage';
+import StudentProfilePage from './pages/StudentProfilePage';
+import StudentReportsPage from './pages/StudentReportsPage';
+import StudentCareerAssessmentPage from './pages/StudentCareerAssessmentPage';
+import StudentCareerReportPage from './pages/StudentCareerReportPage';
 
 // Components
 import Navbar from './components/Navbar';
@@ -31,13 +31,19 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) return <div className="p-8 text-center">Checking administrator session...</div>;
   if (!user) return <Navigate to="/admin/login" replace />;
-  if (user.role !== 'ADMIN') return <Navigate to="/dashboard" replace />;
+  if (user.role !== 'ADMIN') {
+    return <Navigate to={user.role === 'COUNSELOR' ? '/counselor-dashboard' : '/dashboard'} replace />;
+  }
   return <>{children}</>;
 }
 
 function ProtectedCourseRoute({ children }: { children: React.ReactNode }) {
-  const { token } = useAuth();
-  if (!token) return <Navigate to="/register" replace />;
+  const { user, token, loading } = useAuth();
+  if (loading) return <div className="p-8 text-center">Checking your session...</div>;
+  if (!token || !user) return <Navigate to="/register" replace />;
+  if (user.role !== 'STUDENT') {
+    return <Navigate to={user.role === 'ADMIN' ? '/admin' : '/counselor-dashboard'} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -64,7 +70,9 @@ function CounselorRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) return <div className="p-8 text-center">Checking counselor session...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== 'COUNSELOR') return <Navigate to="/dashboard" replace />;
+  if (user.role !== 'COUNSELOR') {
+    return <Navigate to={user.role === 'ADMIN' ? '/admin' : '/dashboard'} replace />;
+  }
   if (accessState === 'checking') return <div className="p-8 text-center">Checking counselor approval...</div>;
   if (accessState === 'blocked') {
     return (
@@ -97,6 +105,26 @@ function CounselorRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ReportAccessRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) return <div className="p-8 text-center">Checking your session...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'COUNSELOR') return <CounselorRoute>{children}</CounselorRoute>;
+  if (user.role === 'STUDENT' || user.role === 'ADMIN') return <>{children}</>;
+  return <Navigate to="/login" replace />;
+}
+
+function GuestRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) return <div className="p-8 text-center">Checking your session...</div>;
+  if (user) {
+    return <Navigate to={user.role === 'ADMIN' ? '/admin' : user.role === 'COUNSELOR' ? '/counselor-dashboard' : '/'} replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <Router>
@@ -107,28 +135,32 @@ export default function App() {
         <Route path="/student/login" element={<LoginPage />} />
         <Route path="/counselor/login" element={<LoginPage />} />
         <Route path="/admin/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/counseling" element={<ProtectedCourseRoute><CounselorListPage /></ProtectedCourseRoute>} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+        <Route path="/counseling" element={<ProtectedCourseRoute><StudentCareerAssessmentPage /></ProtectedCourseRoute>} />
 
-        <Route path="/courses" element={<ProtectedCourseRoute><CoursesPage /></ProtectedCourseRoute>} />
-        <Route path="/courses/:board" element={<ProtectedCourseRoute><CoursesPage /></ProtectedCourseRoute>} />
-        <Route path="/course/:courseId" element={<ProtectedCourseRoute><CourseDetailPage /></ProtectedCourseRoute>} />
-        <Route path="/courses/cbse" element={<ProtectedCourseRoute><CBSEPage /></ProtectedCourseRoute>} />
-        <Route path="/courses/icse" element={<ProtectedCourseRoute><ICSEPage /></ProtectedCourseRoute>} />
-        <Route path="/courses/state" element={<ProtectedCourseRoute><StateBoardPage /></ProtectedCourseRoute>} />
-        <Route path="/skills" element={<ProtectedCourseRoute><SkillDevelopmentPage /></ProtectedCourseRoute>} />
+        <Route path="/courses" element={<ProtectedCourseRoute><ComingSoonPage /></ProtectedCourseRoute>} />
+        <Route path="/courses/:board" element={<ProtectedCourseRoute><ComingSoonPage /></ProtectedCourseRoute>} />
+        <Route path="/course/:courseId" element={<ProtectedCourseRoute><ComingSoonPage /></ProtectedCourseRoute>} />
+        <Route path="/courses/cbse" element={<ProtectedCourseRoute><ComingSoonPage /></ProtectedCourseRoute>} />
+        <Route path="/courses/icse" element={<ProtectedCourseRoute><ComingSoonPage /></ProtectedCourseRoute>} />
+        <Route path="/courses/state" element={<ProtectedCourseRoute><ComingSoonPage /></ProtectedCourseRoute>} />
+        <Route path="/skills" element={<ProtectedCourseRoute><ComingSoonPage /></ProtectedCourseRoute>} />
 
         {/* Counseling Booking Flow */}
         <Route path="/counselors" element={<ProtectedCourseRoute><CounselorListPage /></ProtectedCourseRoute>} />
         <Route path="/slot-booking/:counselorId" element={<Navigate to="/counselors" replace />} />
         <Route path="/booking/:bookingId" element={<ProtectedCourseRoute><BookingDetailsPage /></ProtectedCourseRoute>} />
         <Route path="/booking/:bookingId/complete" element={<ProtectedCourseRoute><BookingCompletePage /></ProtectedCourseRoute>} />
-        <Route path="/booking/:bookingId/report" element={<ProtectedCourseRoute><CounselorReportPage /></ProtectedCourseRoute>} />
+        <Route path="/booking/:bookingId/report" element={<ReportAccessRoute><CounselorReportPage /></ReportAccessRoute>} />
+        <Route path="/my-career-report" element={<ProtectedCourseRoute><StudentCareerReportPage /></ProtectedCourseRoute>} />
         <Route path="/counselor-dashboard" element={<CounselorRoute><CounselorDashboard /></CounselorRoute>} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/my-bookings" element={<MyBookingsPage />} />
           <Route path="/dashboard" element={<StudentDashboard />} />
+          <Route path="/profile" element={<StudentProfilePage />} />
+          <Route path="/my-reports" element={<StudentReportsPage />} />
         </Route>
         <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
       </Routes>

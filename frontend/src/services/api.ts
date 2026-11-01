@@ -7,6 +7,12 @@ const api = axios.create({ baseURL: API_BASE });
 export const login = (email: string, password: string) =>
   api.post('/auth/login', { email, password });
 
+export const requestPasswordReset = (email: string) =>
+  api.post<{ message: string }>('/auth/forgot-password', { email });
+
+export const resetPassword = (token: string, password: string) =>
+  api.post<{ message: string }>('/auth/reset-password', { token, password });
+
 export const loginAdmin = (email: string, password: string) =>
   api.post('/auth/admin/login', { email, password });
 
@@ -35,7 +41,7 @@ export const getCounselors = () => api.get('/counselors');
 export const getCounselorById = (counselorId: string) => api.get(`/counselors/${counselorId}`);
 
 export const getMyCounselorProfile = (token: string) =>
-  api.get('/counselors/me', { headers: { Authorization: `Bearer ${token}` } });
+  api.get('/counselors/me', { headers: { Authorization: 'Bearer ' + token } });
 
 export const updateMyCounselorProfile = (token: string, profile: {
   name: string;
@@ -46,7 +52,7 @@ export const updateMyCounselorProfile = (token: string, profile: {
   yearsExperience: number;
   experienceDetails: string;
   certificationDetails: string;
-}) => api.patch('/counselors/me', profile, { headers: { Authorization: `Bearer ${token}` } });
+}) => api.patch('/counselors/me', profile, { headers: { Authorization: 'Bearer ' + token } });
 
 export const enrollInCounselorCertification = (token: string) =>
   api.post('/counselors/me/certification-enrollment', {}, { headers: { Authorization: `Bearer ${token}` } });
@@ -57,11 +63,29 @@ export const getMyCounselorAppointments = (token: string) =>
 export const getMyCounselorAvailability = (token: string) =>
   api.get('/counselors/me/slots', { headers: { Authorization: `Bearer ${token}` } });
 
+export const updateMyCounselorAvailability = (token: string, date: string, startTimes: string[]) =>
+  api.put(
+    '/counselors/me/availability',
+    { date, startTimes },
+    { headers: { Authorization: 'Bearer ' + token } }
+  );
+
 export const updateMyCounselorMeetingLink = (bookingId: string, meetingLink: string, token: string) =>
   api.patch(
     `/counselors/me/bookings/${bookingId}/meeting-link`,
     { meetingLink },
     { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+export const saveCounselingSessionChecklist = (
+  bookingId: string,
+  answers: Record<string, string>,
+  token: string
+) =>
+  api.put(
+    `/counselors/me/bookings/${bookingId}/checklist`,
+    { answers },
+    { headers: { Authorization: 'Bearer ' + token } }
   );
 
 export const getAdminCounselorCertifications = (token: string) =>
@@ -123,6 +147,59 @@ export const getCounselingEligibility = (token: string) =>
   api.get('/bookings/eligibility', {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+export interface StudentCareerReport {
+  strengths: string;
+  developmentAreas: string;
+  interests: string;
+  careerDirectionsToExplore: string;
+  streamOptionsToDiscuss: string;
+  counselingActionPlan: string;
+}
+
+export interface StudentCareerAssessment {
+  id: string;
+  studentClass: string;
+  schoolCollege: string;
+  phoneNumber: string;
+  educationBoard: string;
+  academicPerformance: string;
+  strongSubjects: string;
+  dislikedSubjects: string;
+  hobbies: string;
+  strengths: string;
+  improvementAreas: string;
+  coursesOfInterest: string;
+  learningStyle: string;
+  likes: string;
+  dislikes: string;
+  careerGoal: string;
+  parentsAspiration: string;
+  report: StudentCareerReport | null;
+  reportEmailSentAt: string | null;
+}
+
+export const getMyCareerAssessment = (token: string) =>
+  api.get<StudentCareerAssessment | null>('/career-assessments/me', {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+
+export const saveMyCareerAssessment = (
+  assessment: Omit<StudentCareerAssessment, 'id' | 'report' | 'reportEmailSentAt'>,
+  token: string
+) =>
+  api.post<{ assessment: StudentCareerAssessment; emailSent: boolean; emailError?: string; alreadyGenerated?: boolean }>(
+    '/career-assessments/me',
+    assessment,
+    { headers: { Authorization: 'Bearer ' + token } }
+  );
+
+export const resendMyCareerReport = (token: string) =>
+  api.post<{ emailSent: boolean }>(
+    '/career-assessments/me/email',
+    {},
+    { headers: { Authorization: 'Bearer ' + token } }
+  );
 
 export const getBookingById = (bookingId: string, token: string) =>
   api.get(`/bookings/${bookingId}`, {
@@ -192,10 +269,31 @@ export const verifyPayment = (
     { headers: { Authorization: `Bearer ${token}` } }
   );
 
+export const recoverBookingPayment = (bookingId: string, token: string) =>
+  api.post(
+    `/payments/booking/${bookingId}/recover`,
+    {},
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
 export const getPaymentDetails = (bookingId: string, token: string) =>
   api.get(`/payments/booking/${bookingId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+export const resendPaymentConfirmationEmails = (bookingId: string, token: string) =>
+  api.post(
+    `/payments/booking/${bookingId}/confirmation-email`,
+    {},
+    { headers: { Authorization: 'Bearer ' + token } }
+  );
+
+export const requestBookingCancellation = (bookingId: string, token: string) =>
+  api.post(
+    `/bookings/${bookingId}/cancellation`,
+    {},
+    { headers: { Authorization: 'Bearer ' + token } }
+  );
 
 export const createReport = (reportData: any, token: string) =>
   api.post('/reports', reportData, {
@@ -262,6 +360,28 @@ export const getAdminOverview = (token: string) =>
   api.get('/admin/overview', {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+export const reviewAdminBookingCancellation = (
+  bookingId: string,
+  status: 'APPROVED' | 'REJECTED',
+  token: string
+) =>
+  api.patch(
+    `/admin/bookings/${bookingId}/cancellation`,
+    { status },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+export const recordAdminBookingRefund = (
+  bookingId: string,
+  refundReference: string,
+  token: string
+) =>
+  api.patch(
+    `/admin/bookings/${bookingId}/refund`,
+    { refundReference },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
 
 export const updateAdminEnrollmentProgress = (enrollmentId: string, progress: number, token: string) =>
   api.patch(

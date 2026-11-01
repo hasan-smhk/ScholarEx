@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Navigate, useNavigate, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, BookOpen, GraduationCap, ShieldCheck, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import BrandMark from '../components/BrandMark';
 
 export default function LoginPage() {
   const location = useLocation();
@@ -9,6 +10,7 @@ export default function LoginPage() {
     fromRegister?: boolean;
     email?: string;
     applicationEmailSent?: boolean;
+    confirmationEmailSent?: boolean;
   } | null;
   const [email, setEmail] = useState(registrationState?.email || '');
   const [password, setPassword] = useState('');
@@ -44,9 +46,13 @@ export default function LoginPage() {
     }
   };
 
-  // If already logged in, redirect
-  if (user && (!isAdminLogin || user.role === 'ADMIN')) {
-    return <Navigate to={isAdminLogin ? '/admin' : user.role === 'COUNSELOR' ? '/counselor-dashboard' : '/'} replace />;
+  if (user) {
+    const destination = user.role === 'ADMIN'
+      ? '/admin'
+      : user.role === 'COUNSELOR'
+        ? '/counselor-dashboard'
+        : '/';
+    return <Navigate to={destination} replace />;
   }
 
   return (
@@ -65,9 +71,7 @@ export default function LoginPage() {
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-5rem)] max-w-7xl flex-col px-5 py-6 sm:px-8 lg:px-12">
         <header className="flex items-center justify-between">
           <Link to="/" className="inline-flex items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-300">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-500 shadow-lg shadow-teal-950/40">
-              <BookOpen aria-hidden="true" className="h-6 w-6 text-white" />
-            </span>
+            <BrandMark className="h-11 w-14 rounded-xl bg-white object-contain p-0.5 shadow-lg shadow-teal-950/40" />
             <span className="text-xl font-black tracking-tight sm:text-2xl">
               Scholar<span className="text-teal-300">Ex</span>
             </span>
@@ -137,7 +141,9 @@ export default function LoginPage() {
                     ? registrationState.applicationEmailSent === false
                       ? 'Your counselor application is submitted, but the confirmation email could not be sent. An administrator will review your application.'
                       : 'Your application is submitted for administrator review. You can sign in to the counselor portal after approval.'
-                    : 'Your account is ready. Sign in to continue.'}
+                    : registrationState.confirmationEmailSent === false
+                      ? 'Your account is ready and you can sign in now. We could not send the confirmation email; please check your email settings or contact support.'
+                      : 'Your account is ready. A confirmation email was sent, and you can sign in now.'}
                 </p>
               )}
 
@@ -179,6 +185,18 @@ export default function LoginPage() {
                     className="w-full rounded-xl border border-white/10 bg-[#071b24]/80 px-4 py-3 text-white placeholder:text-slate-500 outline-none transition duration-200 focus:border-teal-300/70 focus:ring-4 focus:ring-teal-300/10"
                   />
                 </div>
+
+                {!isAdminLogin && (
+                  <div className="-mt-2 text-right">
+                    <Link
+                      to="/reset-password"
+                      state={{ email }}
+                      className="text-sm font-semibold text-teal-300 transition-colors hover:text-teal-200 hover:underline"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
+                )}
 
                 <button
                   type="submit"
@@ -252,7 +270,7 @@ export default function LoginPage() {
         </main>
 
         <footer className="py-2 text-center text-xs text-slate-500">
-          © 2026 ScholarEx Education
+          © 2026 JZD ScholarEx Education
         </footer>
       </div>
     </div>

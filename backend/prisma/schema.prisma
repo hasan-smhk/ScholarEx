@@ -16,6 +16,13 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum BookingCancellationStatus {
+  NONE
+  REQUESTED
+  APPROVED
+  REJECTED
+}
+
 enum Role {
   STUDENT
   ADMIN
@@ -26,6 +33,7 @@ enum ReportApprovalStatus {
   PENDING_REVIEW
   APPROVED
   REJECTED
+  COUNSELOR_REVIEW
 }
 
 enum CounselorCertificationStatus {
@@ -56,13 +64,17 @@ model User {
   role               Role     @default(STUDENT)
   hasUsedFreeSession Boolean  @default(false)
   marksPercentage    Float?
+  passwordResetTokenHash      String?  @unique
+  passwordResetTokenExpiresAt DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   bookings                        Booking[]
   enrollments                     Enrollment[]
   reports                         Report[]
+  careerAssessment                StudentCareerAssessment?
   reportsReviewed                 Report[]     @relation("ReportReviewer")
+  counselorReportsReviewed        Report[]     @relation("ReportCounselorReviewer")
   counselorProfile                Counselor?   @relation("CounselorAccount")
   counselorCertificationsReviewed Counselor[]  @relation("CounselorCertificationReviewer")
   counselorApplicationsReviewed   Counselor[]  @relation("CounselorApprovalReviewer")
@@ -133,6 +145,7 @@ model Slot {
   date        DateTime
   startTime   String
   endTime     String
+  isAvailable Boolean   @default(true)
   isBooked    Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -144,16 +157,28 @@ model Slot {
 }
 
 model Booking {
-  id              String        @id @default(cuid())
-  studentId       String
-  student         User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  slotId          String
-  slot            Slot          @relation(fields: [slotId], references: [id], onDelete: Cascade)
-  isFreeSession   Boolean       @default(false)
-  paymentStatus   PaymentStatus @default(PENDING)
-  amount          Float         @default(0)
-  marksPercentage Float?
-  meetingLink     String?
+  id                          String                    @id @default(cuid())
+  studentId                   String
+  student                     User                      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  slotId                      String
+  slot                        Slot                      @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  isFreeSession               Boolean                   @default(false)
+  paymentStatus               PaymentStatus             @default(PENDING)
+  cancellationStatus          BookingCancellationStatus @default(NONE)
+  amount                      Float                     @default(0)
+  marksPercentage             Float?
+  meetingLink                 String?
+  meetingLinkEmailSentAt      DateTime?
+  cancellationRequestedAt     DateTime?
+  cancellationReviewedAt      DateTime?
+  cancellationReviewNote      String?
+  cancelledAt                 DateTime?
+  razorpayOrderId             String?
+  razorpayPaymentId           String?
+  studentPaymentEmailSentAt   DateTime?
+  counselorPaymentEmailSentAt DateTime?
+  refundReference             String?
+  refundProcessedAt           DateTime?
 
   educationBackground String?
   currentStream       String?
@@ -178,6 +203,8 @@ model Booking {
   phoneNo             String?
   emailId             String?
   subjectAssessments  Json?
+  sessionChecklistAnswers Json?
+  sessionChecklistCompletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -229,6 +256,9 @@ model Report {
   reviewedAt         DateTime?
   reviewedById       String?
   reviewedBy         User?                @relation("ReportReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  counselorReviewedAt DateTime?
+  counselorReviewedById String?
+  counselorReviewedBy User?               @relation("ReportCounselorReviewer", fields: [counselorReviewedById], references: [id], onDelete: SetNull)
   reviewNote         String?
   emailSentAt        DateTime?
   strengths          String?
@@ -239,4 +269,32 @@ model Report {
   updatedAt          DateTime             @updatedAt
 
   @@map("Report")
+}
+
+model StudentCareerAssessment {
+  id                     String   @id @default(cuid())
+  studentId              String   @unique
+  student                User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentClass           String
+  schoolCollege          String
+  phoneNumber            String
+  educationBoard         String
+  academicPerformance    String
+  strongSubjects         String
+  dislikedSubjects       String
+  hobbies                String
+  strengths              String
+  improvementAreas       String
+  coursesOfInterest      String
+  learningStyle          String
+  likes                  String
+  dislikes               String
+  careerGoal             String
+  parentsAspiration      String
+  report                 Json?
+  reportEmailSentAt      DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("StudentCareerAssessment")
 }

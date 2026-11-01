@@ -34,7 +34,7 @@ interface Counselor {
 // Dummy Data
 const DUMMY_COUNSELOR: Counselor = {
   id: 'c1',
-  name: 'Dr. Priya Sharma',
+  name: 'Syed Baqar',
   isFree: true,
   specialization: 'Career Guidance'
 };
@@ -160,15 +160,15 @@ export default function SlotBookingPage() {
   return (
     <PageBackground theme="booking" texture="grid">
       {/* Header */}
-      <div className="relative bg-gradient-to-r from-indigo-700 via-blue-700 to-indigo-800 py-16 overflow-hidden">
+      <div className="relative overflow-hidden bg-gradient-to-br from-[#071b24] via-[#0b3943] to-[#0c3440] py-16">
         <div className="max-w-6xl mx-auto px-6">
-          <p className="text-indigo-200 font-bold uppercase tracking-widest text-sm mb-2">
+          <p className="mb-2 text-sm font-bold uppercase tracking-widest text-teal-100">
             Step 2 of 2
           </p>
           <h1 className="text-4xl md:text-5xl font-black text-white mb-2">
             Confirm Your Session
           </h1>
-          <p className="text-xl text-indigo-100">
+          <p className="text-xl text-white/80">
             Select a time slot that works for you
           </p>
         </div>
@@ -178,25 +178,25 @@ export default function SlotBookingPage() {
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Main Content - Slot Selection */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white rounded-3xl shadow-lg border border-indigo-100 p-6">
+            <div className="rounded-3xl border border-white/10 bg-white p-6 shadow-lg">
               {/* Back Button */}
               <button 
                 onClick={() => navigate('/counselors')}
-                className="flex items-center gap-2 text-indigo-600 font-bold hover:text-indigo-800 transition-colors mb-6"
+                className="mb-6 flex items-center gap-2 font-bold text-teal-700 transition-colors hover:text-teal-900"
               >
                 <ArrowLeft className="w-5 h-5" />
                 Back to Counselors
               </button>
 
               {/* Counselor Info Card */}
-              <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-6 mb-8 border border-indigo-100">
+              <div className="mb-8 rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-cyan-50 p-6">
                 <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-700 to-cyan-700 text-2xl font-black text-white shadow-lg">
                     {counselor.name.split(' ').map(n => n[0]).join('')}
                   </div>
                   <div>
                     <h2 className="text-xl font-black text-gray-900">{counselor.name}</h2>
-                    <p className="text-indigo-600 font-bold">{counselor.specialization}</p>
+                    <p className="font-bold text-teal-700">{counselor.specialization}</p>
                     {counselor.isFree ? (
                       <span className="inline-flex items-center gap-1 bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 px-3 py-1 rounded-full text-xs font-black border border-green-200 mt-2">
                         <Sparkles className="w-3 h-3" />
@@ -220,7 +220,7 @@ export default function SlotBookingPage() {
                 {sortedDates.map(dateStr => (
                   <div key={dateStr}>
                     <h3 className="text-lg font-black text-gray-900 mb-4 flex items-center gap-2">
-                      <Calendar className="w-5 h-5 text-indigo-600" />
+                      <Calendar className="w-5 h-5 text-teal-700" />
                       {formatSlotDate(dateStr)}
                     </h3>
                     <div className="grid sm:grid-cols-2 gap-3">
@@ -230,13 +230,13 @@ export default function SlotBookingPage() {
                           onClick={() => handleSlotSelect(slot.id)}
                           className={`p-5 rounded-2xl border-2 transition-all duration-300 text-left group ${
                             selectedSlotId === slot.id
-                              ? 'bg-gradient-to-br from-indigo-500 to-blue-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/30'
-                              : 'bg-white border-gray-200 hover:border-indigo-400 hover:bg-indigo-50'
+                              ? 'bg-gradient-to-br from-teal-700 to-cyan-700 border-teal-700 text-white shadow-lg shadow-teal-700/30'
+                              : 'bg-white border-gray-200 hover:border-teal-500 hover:bg-teal-50'
                           }`}
                         >
                           <div className="flex items-center gap-3">
                             <Clock className={`w-5 h-5 ${
-                              selectedSlotId === slot.id ? 'text-white' : 'text-indigo-500'
+                              selectedSlotId === slot.id ? 'text-white' : 'text-teal-700'
                             }`} />
                             <div>
                               <p className={`font-bold ${
@@ -245,7 +245,7 @@ export default function SlotBookingPage() {
                                 {slot.startTime} - {slot.endTime}
                               </p>
                               {selectedSlotId === slot.id && (
-                                <p className="text-indigo-100 text-sm font-bold">Selected</p>
+                                <p className="text-teal-100 text-sm font-bold">Selected</p>
                               )}
                             </div>
                             {selectedSlotId === slot.id && (
@@ -263,13 +263,13 @@ export default function SlotBookingPage() {
 
           {/* Sidebar - Summary */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-3xl shadow-lg border border-indigo-100 p-6 sticky top-6">
+            <div className="sticky top-6 rounded-3xl border border-white/10 bg-white p-6 shadow-lg">
               <h3 className="text-xl font-black text-gray-900 mb-6">Booking Summary</h3>
               
               <div className="space-y-4 mb-6">
                 <div className="flex items-center gap-3 text-sm">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                    <Star className="w-5 h-5 text-indigo-600" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-100">
+                    <Star className="w-5 h-5 text-teal-700" />
                   </div>
                   <div>
                     <p className="text-gray-500 font-bold">Counselor</p>
@@ -279,13 +279,13 @@ export default function SlotBookingPage() {
                 
                 {selectedSlot ? (
                   <div className="flex items-center gap-3 text-sm">
-                    <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                      <Calendar className="w-5 h-5 text-indigo-600" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-100">
+                      <Calendar className="w-5 h-5 text-teal-700" />
                     </div>
                     <div>
                       <p className="text-gray-500 font-bold">Time Slot</p>
                       <p className="font-bold text-gray-900">{formatSlotDate(selectedSlot.date)}</p>
-                      <p className="text-indigo-600 font-bold">{selectedSlot.startTime} - {selectedSlot.endTime}</p>
+                      <p className="font-bold text-teal-700">{selectedSlot.startTime} - {selectedSlot.endTime}</p>
                     </div>
                   </div>
                 ) : (
@@ -316,7 +316,7 @@ export default function SlotBookingPage() {
                   disabled={!selectedSlotId || isLoading}
                   className={`w-full py-4 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 ${
                     selectedSlotId && !isLoading
-                      ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-700 hover:to-blue-700 shadow-lg shadow-indigo-500/30'
+                      ? 'bg-gradient-to-r from-teal-700 to-cyan-700 text-white hover:from-teal-800 hover:to-cyan-800 shadow-lg shadow-teal-500/30'
                       : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                   }`}
                 >

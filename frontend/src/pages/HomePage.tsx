@@ -3,14 +3,14 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { enrollInCourse, getCourses } from '../services/api';
 import {
-  BookOpen,
   GraduationCap,
   Lightbulb,
-  Map,
-} from 'lucide-react';
+}
+from 'lucide-react';
 import LearningPromoBanner from '../components/LearningPromoBanner';
 import SubjectIcon from '../components/SubjectIcon';
 import PageBackground from '../components/PageBackground';
+import BrandMark from '../components/BrandMark';
 
 interface Course {
   id: string;
@@ -47,24 +47,6 @@ const HeroSection: React.FC = () => {
 
           <div className="mt-5 flex flex-wrap gap-2" aria-label="ScholarEx learning offerings">
             <Link
-              to="/courses/cbse"
-              className="rounded-full border border-teal-200/30 bg-white px-3.5 py-2 text-sm font-semibold text-teal-800 shadow-sm transition-colors hover:bg-teal-50"
-            >
-              CBSE courses
-            </Link>
-            <Link
-              to="/courses/icse"
-              className="rounded-full border border-cyan-200/30 bg-white px-3.5 py-2 text-sm font-semibold text-cyan-800 shadow-sm transition-colors hover:bg-cyan-50"
-            >
-              ICSE courses
-            </Link>
-            <Link
-              to="/courses/state"
-              className="rounded-full border border-teal-100 bg-white px-3.5 py-2 text-sm font-semibold text-teal-700 shadow-sm transition-colors hover:border-teal-300 hover:bg-teal-50"
-            >
-              Karnataka State Board
-            </Link>
-            <Link
               to="/counseling"
               className="rounded-full border border-amber-100 bg-white px-3.5 py-2 text-sm font-semibold text-amber-700 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50"
             >
@@ -98,6 +80,24 @@ const HeroSection: React.FC = () => {
               loading="eager"
             />
           </div>
+          <div className="home-floating-card absolute -left-3 bottom-5 rounded-2xl border border-white/60 bg-white/95 p-3 shadow-xl sm:-left-6 sm:bottom-8 sm:p-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-50 text-xl">🎓</span>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Personal guidance</p>
+                <p className="text-xs text-slate-500">Support for every learner</p>
+              </div>
+            </div>
+          </div>
+          <div className="home-floating-card home-floating-card-delayed absolute -right-2 top-5 rounded-2xl border border-white/60 bg-white/95 p-3 shadow-xl sm:-right-5 sm:top-8 sm:p-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-xl">📚</span>
+              <div>
+                <p className="text-sm font-bold text-slate-900">50+ courses</p>
+                <p className="text-xs text-slate-500">Made for your goals</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -109,21 +109,21 @@ const AchievementBanner: React.FC = () => {
   const stats = [
     { icon: '🎓', value: '100+', label: 'Sessions Completed' },
     { icon: '👨‍🎓', value: '1000+', label: 'Active Student Learners' },
-    { icon: '📚', value: '50+', label: 'Courses Available' },
+    { icon: '📚', value: '50+', label: 'Courses Coming soon' },
     { icon: '⭐', value: '4.9', label: 'Average Rating' },
   ];
 
   return (
-    <section className="bg-gradient-to-r from-[#0f766e] via-[#0e7490] to-[#115e59] py-12">
+    <section className="bg-gradient-to-r from-[#0f766e] via-[#0e7490] to-[#115e59] py-8 sm:py-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <p className="text-center text-white/80 uppercase tracking-widest text-sm font-bold mb-8">
+        <p className="text-center text-white/80 uppercase tracking-widest text-xs sm:text-sm font-bold mb-6">
           Trusted by Students Across Karnataka
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5 sm:gap-8">
           {stats.map((stat) => (
             <div key={stat.label} className="text-center group">
-              <div className="text-4xl mb-3">{stat.icon}</div>
-              <div className="text-4xl font-black text-white mb-1 group-hover:scale-110 transition-transform">
+              <div className="mb-2 text-3xl sm:text-4xl">{stat.icon}</div>
+              <div className="mb-1 text-3xl font-black text-white transition-transform group-hover:scale-110 sm:text-4xl">
                 {stat.value}
               </div>
               <div className="text-white/80 text-sm font-medium">{stat.label}</div>
@@ -140,27 +140,11 @@ const ModuleCards: React.FC = () => {
   const modules = [
     {
       title: 'Counseling Session',
-      desc: 'Book 1:1 guidance, claim your free session, and access the admin portal.',
+      desc: 'Create a free career report, then book paid one-to-one counseling.',
       link: '/counseling',
-      cta: 'Book Session',
+      cta: 'Get Free Report',
       icon: GraduationCap,
       color: 'border-violet-400/20 bg-violet-400/10',
-    },
-    {
-      title: 'CBSE Board',
-      desc: 'Explore Class 1 to 12 courses in Maths, Science, English, and more.',
-      link: '/courses/cbse',
-      cta: 'View CBSE',
-      icon: BookOpen,
-      color: 'border-sky-400/20 bg-sky-400/10',
-    },
-    {
-      title: 'Karnataka State Board',
-      desc: 'Karnataka State Board courses structured by class and subject.',
-      link: '/courses/state',
-      cta: 'View Karnataka Board',
-      icon: Map,
-      color: 'border-orange-400/20 bg-orange-400/10',
     },
     {
       title: 'Skill Development',
@@ -370,11 +354,27 @@ const FeaturedCourses: React.FC<{ courses: Course[]; onEnroll: (id: string) => v
 
 // Footer Component
 const Footer: React.FC = () => {
+  const [contactNotice, setContactNotice] = useState('');
+
+  const handleContactSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const fullName = String(formData.get('fullName') || '').trim();
+    const email = String(formData.get('email') || '').trim();
+    const message = String(formData.get('message') || '').trim();
+    const subject = `ScholarEx contact from ${fullName}`;
+    const body = `Name: ${fullName}\nEmail: ${email}\n\n${message}`;
+
+    window.location.href = `mailto:Info@jzdtechnologies.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setContactNotice('Your email app should open with your message addressed to ScholarEx.');
+  };
+
   return (
     <footer className="bg-[#061a22] pt-16 pb-8">
       <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-4 gap-10">
         <div>
-          <h3 className="mb-4 text-3xl font-black text-white">
+          <h3 className="mb-4 flex items-center gap-2.5 text-3xl font-black text-white">
+            <BrandMark className="h-10 w-12 rounded-lg bg-white object-contain p-0.5 shadow-sm" />
             Scholar<span className="text-teal-300">Ex</span>
           </h3>
           <p className="leading-8 text-slate-300">
@@ -404,16 +404,70 @@ const Footer: React.FC = () => {
         <div>
           <h4 className="mb-4 font-bold text-white">Company</h4>
           <div className="space-y-3 text-slate-300">
-            <p>About ScholarEx</p>
-            <p>Careers</p>
-            <p>Contact: support@scholarex.com</p>
+            <p>About JZDScholarEx</p>
+            <a href="#contact-form" className="block hover:text-teal-300">Contact Us</a>
+            <p>Contact: Info@jzdtechnologies.com</p>
             <p>Bengaluru, Karnataka</p>
           </div>
         </div>
       </div>
 
+      <section id="contact-form" className="scroll-mt-24 mx-auto mt-12 max-w-7xl px-6">
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8">
+          <div className="max-w-2xl">
+            <p className="text-sm font-bold uppercase tracking-widest text-teal-300">Contact us</p>
+            <h2 className="mt-2 text-2xl font-black text-white">How can we help?</h2>
+            <p className="mt-2 text-slate-300">
+              Send us a message and your email app will prepare it for Info@jzdtechnologies.com.
+            </p>
+          </div>
+          <form onSubmit={handleContactSubmit} className="mt-6 grid max-w-2xl gap-5">
+            <div>
+              <label htmlFor="contact-full-name" className="mb-2 block text-sm font-semibold text-white">Full name</label>
+              <input
+                id="contact-full-name"
+                name="fullName"
+                type="text"
+                autoComplete="name"
+                required
+                className="w-full rounded-xl border border-white/20 bg-[#0b2731] px-4 py-3 text-white placeholder:text-slate-400 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-300/30"
+              />
+            </div>
+            <div>
+              <label htmlFor="contact-email" className="mb-2 block text-sm font-semibold text-white">Email address</label>
+              <input
+                id="contact-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="w-full rounded-xl border border-white/20 bg-[#0b2731] px-4 py-3 text-white placeholder:text-slate-400 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-300/30"
+              />
+            </div>
+            <div>
+              <label htmlFor="contact-message" className="mb-2 block text-sm font-semibold text-white">Message</label>
+              <textarea
+                id="contact-message"
+                name="message"
+                rows={5}
+                required
+                className="w-full resize-y rounded-xl border border-white/20 bg-[#0b2731] px-4 py-3 text-white placeholder:text-slate-400 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-300/30"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-fit rounded-xl bg-teal-500 px-6 py-3 font-bold text-white transition-colors hover:bg-teal-400"
+            >
+              Prepare message
+            </button>
+            {contactNotice && <p role="status" className="text-sm text-teal-200">{contactNotice}</p>}
+          </form>
+        </div>
+      </section>
+
       <div className="mt-12 border-t border-white/10 pt-6 text-center text-slate-400">
-        © 2026 ScholarEx Education. Built for curious minds.
+        Empowering curious minds. ScholarEx Education is a product of JZD Technologies. © 2026 All rights reserved.
+
       </div>
     </footer>
   );
@@ -423,26 +477,26 @@ const Footer: React.FC = () => {
 export default function HomePage() {
   const { user, token, loading: authLoading } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
   const [enrollLoading, setEnrollLoading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (user?.role === 'COUNSELOR' || user?.role === 'ADMIN') {
+      setCourses([]);
+      return;
+    }
+
     async function loadData() {
       try {
-        setLoading(true);
         const response = await getCourses();
         setCourses(response.data);
-        setError(null);
       } catch (err: any) {
         console.error('Fetch error:', err);
-        setError(null); // Don't show error on homepage
-      } finally {
-        setLoading(false);
       }
     }
     loadData();
-  }, []);
+  }, [authLoading, user?.role]);
 
   const handleEnroll = async (courseId: string) => {
     if (!user || !token) {
@@ -459,6 +513,42 @@ export default function HomePage() {
       setEnrollLoading(null);
     }
   };
+
+  if (authLoading) {
+    return (
+      <PageBackground theme="home">
+        <main className="flex min-h-[70vh] items-center justify-center px-6 py-16 text-white">
+          <p role="status" className="font-semibold">Loading your JZDScholarEx home...</p>
+        </main>
+      </PageBackground>
+    );
+  }
+
+  if (user?.role === 'COUNSELOR' || user?.role === 'ADMIN') {
+    const dashboardPath = user.role === 'ADMIN' ? '/admin' : '/counselor-dashboard';
+    const roleLabel = user.role === 'ADMIN' ? 'administrator' : 'counselor';
+
+    return (
+      <PageBackground theme="home">
+        <main className="flex min-h-[70vh] items-center justify-center px-6 py-16">
+          <section className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0d2933]/95 p-8 text-center text-white shadow-2xl sm:p-12">
+            <BrandMark className="mx-auto mb-6 h-14 w-16 rounded-xl bg-white object-contain p-1 shadow-lg" />
+            <p className="text-sm font-bold uppercase tracking-[0.2em] text-teal-300">JZDScholarEx home</p>
+            <h1 className="mt-3 text-3xl font-black sm:text-4xl">Welcome, {user.name}</h1>
+            <p className="mt-4 leading-7 text-slate-300">
+              You are signed in as a {roleLabel}. Your role-specific workspace and options are available from your dashboard.
+            </p>
+            <Link
+              to={dashboardPath}
+              className="mt-8 inline-flex rounded-xl bg-teal-500 px-6 py-3 font-bold text-white transition-colors hover:bg-teal-400"
+            >
+              Return to your dashboard
+            </Link>
+          </section>
+        </main>
+      </PageBackground>
+    );
+  }
 
   return (
     <PageBackground theme="home">
@@ -478,13 +568,15 @@ export default function HomePage() {
       
       {/* Featured Courses */}
       {courses.length > 0 && (
-        <FeaturedCourses 
-          courses={courses} 
-          onEnroll={handleEnroll}
-          enrollLoading={enrollLoading}
-          user={user}
-          token={token}
-        />
+        <div className="hidden">
+          <FeaturedCourses
+            courses={courses}
+            onEnroll={handleEnroll}
+            enrollLoading={enrollLoading}
+            user={user}
+            token={token}
+          />
+        </div>
       )}
       
       {/* Footer */}

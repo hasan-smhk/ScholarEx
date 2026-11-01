@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
+import BrandMark from './BrandMark';
 
 export default function Footer() {
   return (
     <footer className="border-t border-gray-200 bg-white pt-16 pb-8">
       <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-4 gap-10">
         <div>
-          <h3 className="text-3xl font-black text-slate-900 mb-4">
+          <h3 className="mb-4 flex items-center gap-2.5 text-3xl font-black text-slate-900">
+            <BrandMark className="h-10 w-12 rounded-lg bg-white object-contain p-0.5 shadow-sm" />
             Scholar<span className="text-indigo-600">Ex</span>
           </h3>
           <p className="text-slate-600 leading-8">

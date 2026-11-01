@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { Activity, BookOpenCheck, CalendarClock, CheckCircle2, Clock3, Search, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import BrandMark from '../components/BrandMark';
 import {
 	getAdminOverview,
 	getAdminCounselorCertifications,
@@ -10,6 +11,8 @@ import {
 	reviewAdminCounselorCertification,
 	reviewAdminCounselorApplication,
 	resendAdminCounselorApplicationEmail,
+	reviewAdminBookingCancellation,
+	recordAdminBookingRefund,
 	reviewReport as submitReportReview,
 	updateAdminCounselorFee,
 	updateAdminEnrollmentProgress,
@@ -39,7 +42,16 @@ interface Booking {
 	id: string;
 	isFreeSession: boolean;
 	paymentStatus: string;
+	cancellationStatus: 'NONE' | 'REQUESTED' | 'APPROVED' | 'REJECTED';
+	cancellationRequestedAt: string | null;
+	cancellationReviewedAt: string | null;
+	cancellationReviewNote: string | null;
+	cancelledAt: string | null;
 	amount: number;
+	razorpayOrderId: string | null;
+	razorpayPaymentId: string | null;
+	refundReference: string | null;
+	refundProcessedAt: string | null;
 	createdAt: string;
 	student: Pick<Student, 'id' | 'name' | 'email'>;
 	slot: {
@@ -80,7 +92,7 @@ interface CounselorCertificationRecord {
 
 interface CounselingReport {
 	id: string;
-	approvalStatus: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+	approvalStatus: 'COUNSELOR_REVIEW' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
 	isAiGenerated: boolean;
 	createdAt: string;
 	emailSentAt: string | null;
@@ -141,6 +153,9 @@ export default function AdminPanel() {
 	const [reviewingCertificationId, setReviewingCertificationId] = useState('');
 	const [reviewingApplicationId, setReviewingApplicationId] = useState('');
 	const [resendingApplicationEmailId, setResendingApplicationEmailId] = useState('');
+	const [processingBookingId, setProcessingBookingId] = useState('');
+	const [refundReferenceDrafts, setRefundReferenceDrafts] = useState<Record<string, string>>({});
+	const [bookingActionMessage, setBookingActionMessage] = useState('');
 
 	useEffect(() => {
 		async function loadOverview() {
@@ -173,6 +188,59 @@ export default function AdminPanel() {
 		if (!token) return;
 		const { data } = await getAdminReports(token);
 		setReports(data);
+	}
+
+	async function refreshBookings() {
+		if (!token) return;
+		const { data } = await getAdminOverview(token);
+		setOverview((current) => ({ ...current, bookings: data.bookings }));
+	}
+
+	async function reviewBookingCancellation(bookingId: string, status: 'APPROVED' | 'REJECTED') {
+		if (!token) return;
+		setProcessingBookingId(bookingId);
+		setError('');
+		setBookingActionMessage('');
+		try {
+			await reviewAdminBookingCancellation(bookingId, status, token);
+			setBookingActionMessage(status === 'APPROVED'
+				? 'Cancellation approved and slot released. Process any refund manually in Razorpay, then record its reference.'
+				: 'Cancellation request rejected.');
+			try {
+				await refreshBookings();
+			} catch {
+				setBookingActionMessage((current) => `${current} Reload the page to refresh booking details.`);
+			}
+		} catch (err: any) {
+			setError(err.response?.data?.error || 'Could not review the cancellation request.');
+		} finally {
+			setProcessingBookingId('');
+		}
+	}
+
+	async function markBookingRefunded(bookingId: string) {
+		if (!token) return;
+		const refundReference = (refundReferenceDrafts[bookingId] || '').trim();
+		if (!refundReference) {
+			setError('Enter the Razorpay refund reference after processing the refund.');
+			return;
+		}
+		setProcessingBookingId(bookingId);
+		setError('');
+		setBookingActionMessage('');
+		try {
+			await recordAdminBookingRefund(bookingId, refundReference, token);
+			setBookingActionMessage('Refund reference recorded.');
+			try {
+				await refreshBookings();
+			} catch {
+				setBookingActionMessage('Refund reference recorded, but booking details could not refresh. Reload the page.');
+			}
+		} catch (err: any) {
+			setError(err.response?.data?.error || 'Could not record the refund.');
+		} finally {
+			setProcessingBookingId('');
+		}
 	}
 
 	async function reviewCounselorCertification(counselorId: string, verified: boolean) {
@@ -340,7 +408,10 @@ export default function AdminPanel() {
 			<header className="scholar-dashboard-hero border-b border-slate-200 bg-white">
 				<div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5">
 					<div>
-						<p className="text-xs font-bold uppercase tracking-wider text-indigo-700">ScholarEx · Administration</p>
+						<p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-700">
+							<BrandMark className="h-8 w-10 rounded-md bg-white object-contain p-0.5 shadow-sm" />
+							ScholarEx · Administration
+						</p>
 						<h1 className="mt-1 text-2xl font-bold">{activeSection === 'students' ? 'Student management' : 'Counselor management'}</h1>
 					</div>
 					<div className="flex items-center gap-4">
@@ -364,6 +435,7 @@ export default function AdminPanel() {
 				</section>
 
 				{error && <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+				{bookingActionMessage && <p role="status" className="mt-5 rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">{bookingActionMessage}</p>}
 
 				<nav className="mt-8 flex gap-2 rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm" aria-label="Admin management sections">
 					{([
@@ -434,6 +506,13 @@ export default function AdminPanel() {
 										))}
 									</dl>
 									{report.reviewNote && <p className="mt-3 text-sm text-red-700">Review note: {report.reviewNote}</p>}
+									<button
+										type="button"
+										onClick={() => navigate(`/booking/${report.booking.id}/report`)}
+										className="mt-4 rounded-md border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+									>
+										Edit report
+									</button>
 									{report.approvalStatus === 'PENDING_REVIEW' && (
 										<div className="mt-4 space-y-3">
 											<textarea
@@ -624,7 +703,7 @@ export default function AdminPanel() {
 
 				<section className="scholar-panel-card mt-6 rounded-lg border border-slate-200 bg-white p-5">
 					<h2 className="text-lg font-bold">Counselor session fees</h2>
-					<p className="mb-4 text-sm text-slate-500">The first session remains free. These fees apply to each student’s later bookings.</p>
+					<p className="mb-4 text-sm text-slate-500">All new counseling bookings are paid. These fees apply to each paid session.</p>
 					{overview.counselors.length ? (
 						<div className="divide-y divide-slate-100">
 							{overview.counselors.map((counselor) => (
@@ -710,7 +789,7 @@ export default function AdminPanel() {
 									<div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600">
 										<span>{selectedStudent.email}</span>
 										<span>Joined {dateTime(selectedStudent.createdAt)}</span>
-										<span>{selectedStudent.hasUsedFreeSession ? 'Free session used' : 'Free session available'}</span>
+										<span>{selectedStudent.hasUsedFreeSession ? 'Historical free session used' : 'Paid-session workflow'}</span>
 									</div>
 								</section>
 
@@ -757,7 +836,7 @@ export default function AdminPanel() {
 									<h3 className="mb-3 font-bold">Counseling & submissions</h3>
 									{studentBookings.length ? (
 										<div className="overflow-x-auto border-y border-slate-200">
-											<table className="w-full min-w-[600px] text-left text-sm">
+											<table className="w-full min-w-[760px] text-left text-sm">
 												<thead className="text-xs uppercase text-slate-500">
 													<tr><th className="py-3 pr-4">Session</th><th className="py-3 pr-4">Payment</th><th className="py-3 pr-4">Report</th><th className="py-3 pr-4">Booked</th><th className="py-3">Action</th></tr>
 												</thead>
@@ -769,9 +848,15 @@ export default function AdminPanel() {
 																<span className="text-slate-500">{new Date(booking.slot.date).toLocaleDateString()} · {booking.slot.startTime}-{booking.slot.endTime}</span>
 															</td>
 															<td className="py-3 pr-4">
-																<span className={`rounded px-2 py-1 text-xs font-semibold ${booking.paymentStatus === 'PAID' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+																<span className={`rounded px-2 py-1 text-xs font-semibold ${booking.paymentStatus === 'PAID' ? 'bg-emerald-50 text-emerald-700' : booking.paymentStatus === 'REFUNDED' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>
 																	{booking.isFreeSession ? 'FREE' : booking.paymentStatus}
 																</span>
+																{!booking.isFreeSession && <span className="mt-1 block text-xs text-slate-500">₹{booking.amount}</span>}
+																{booking.razorpayPaymentId && (
+																	<span className="mt-1 block max-w-40 break-all text-xs text-slate-500" title={`Razorpay payment ID: ${booking.razorpayPaymentId}`}>
+																		Payment ID: {booking.razorpayPaymentId}
+																	</span>
+																)}
 															</td>
 															<td className="py-3 pr-4">
 																{booking.report
@@ -780,12 +865,65 @@ export default function AdminPanel() {
 															</td>
 															<td className="py-3 pr-4 text-slate-500">{dateTime(booking.createdAt)}</td>
 															<td className="py-3">
-																<button
-																	onClick={() => navigate(`/booking/${booking.id}/report`)}
-																	className="font-semibold text-indigo-700 hover:text-indigo-900"
-																>
-																	{booking.report ? 'View report' : 'Prepare report'}
-																</button>
+																<div className="flex flex-col items-start gap-2">
+																	{!booking.cancelledAt && booking.report && <button
+																		onClick={() => navigate(`/booking/${booking.id}/report`)}
+																		className="font-semibold text-indigo-700 hover:text-indigo-900"
+																	>
+																		View report
+																	</button>}
+																	{booking.cancellationStatus === 'REQUESTED' && (
+																		<div className="flex gap-2">
+																			<button
+																				type="button"
+																				onClick={() => reviewBookingCancellation(booking.id, 'APPROVED')}
+																				disabled={processingBookingId === booking.id}
+																				className="rounded border border-emerald-200 px-2 py-1 text-xs font-bold text-emerald-800 disabled:opacity-50"
+																			>
+																				Approve cancel
+																			</button>
+																			<button
+																				type="button"
+																				onClick={() => reviewBookingCancellation(booking.id, 'REJECTED')}
+																				disabled={processingBookingId === booking.id}
+																				className="rounded border border-rose-200 px-2 py-1 text-xs font-bold text-rose-800 disabled:opacity-50"
+																			>
+																				Reject
+																			</button>
+																		</div>
+																	)}
+																	{booking.cancellationStatus === 'APPROVED' && !booking.isFreeSession && booking.paymentStatus === 'PAID' && (
+																		<div className="flex flex-col gap-1">
+																			<p className="max-w-48 text-xs text-slate-500">
+																				Process the refund in Razorpay using the payment ID above, then enter its refund ID here.
+																			</p>
+																			<input
+																				value={refundReferenceDrafts[booking.id] ?? ''}
+																				onChange={(event) => setRefundReferenceDrafts((current) => ({ ...current, [booking.id]: event.target.value }))}
+																				placeholder="Razorpay refund ID"
+																				aria-label={`Razorpay refund reference for booking ${booking.id}`}
+																				className="w-40 rounded border border-slate-300 px-2 py-1 text-xs"
+																			/>
+																			<button
+																				type="button"
+																				onClick={() => markBookingRefunded(booking.id)}
+																				disabled={processingBookingId === booking.id}
+																				className="rounded border border-indigo-200 px-2 py-1 text-xs font-bold text-indigo-800 disabled:opacity-50"
+																			>
+																				Record manual refund
+																			</button>
+																		</div>
+																	)}
+																	{booking.cancellationStatus !== 'NONE' && (
+																		<span className="text-xs text-slate-500">
+																			Cancellation: {booking.cancellationStatus}
+																			{booking.cancellationReviewNote ? ` · ${booking.cancellationReviewNote}` : ''}
+																		</span>
+																	)}
+																	{booking.paymentStatus === 'REFUNDED' && booking.refundReference && (
+																		<span className="text-xs text-slate-500">Refund ref: {booking.refundReference}</span>
+																	)}
+																</div>
 															</td>
 														</tr>
 													))}

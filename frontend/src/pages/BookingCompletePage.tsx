@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle, Home, Calendar } from 'lucide-react';
-import { getBookingById } from '../services/api';
+import { getBookingById, resendPaymentConfirmationEmails } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import PageBackground from '../components/PageBackground';
 
@@ -9,6 +9,9 @@ interface Booking {
   id: string;
   isFreeSession: boolean;
   paymentStatus: string;
+  studentPaymentEmailSentAt: string | null;
+  counselorPaymentEmailSentAt: string | null;
+  cancelledAt: string | null;
   amount: number;
   slot: {
     date: string;
@@ -32,6 +35,9 @@ export default function BookingCompletePage() {
   const { token } = useAuth();
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
+  const [emailNotifications, setEmailNotifications] = useState<{ studentSent: boolean; counselorSent: boolean } | null>(null);
+  const [emailError, setEmailError] = useState('');
+  const [retryingEmails, setRetryingEmails] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -47,12 +53,22 @@ export default function BookingCompletePage() {
         if (!active) return;
 
         const loadedBooking = response.data;
+        if (loadedBooking.cancelledAt) {
+          navigate(`/booking/${bookingId}`, { replace: true });
+          return;
+        }
         if (!loadedBooking.isFreeSession && loadedBooking.paymentStatus !== 'PAID') {
           navigate(`/booking/${bookingId}`, { replace: true });
           return;
         }
 
         setBooking(loadedBooking);
+        if (!loadedBooking.isFreeSession) {
+          setEmailNotifications({
+            studentSent: Boolean(loadedBooking.studentPaymentEmailSentAt),
+            counselorSent: Boolean(loadedBooking.counselorPaymentEmailSentAt),
+          });
+        }
       } catch {
         if (active) navigate('/counselors', { replace: true });
       } finally {
@@ -66,6 +82,23 @@ export default function BookingCompletePage() {
     };
   }, [bookingId, navigate, token]);
 
+  async function retryConfirmationEmails() {
+    if (!bookingId || !token || retryingEmails) return;
+    setRetryingEmails(true);
+    setEmailError('');
+    try {
+      const response = await resendPaymentConfirmationEmails(bookingId, token);
+      setEmailNotifications(response.data.emailNotifications);
+    } catch (err: any) {
+      if (err.response?.data?.emailNotifications) {
+        setEmailNotifications(err.response.data.emailNotifications);
+      }
+      setEmailError(err.response?.data?.error || 'Could not resend confirmation emails.');
+    } finally {
+      setRetryingEmails(false);
+    }
+  }
+
   if (loading || !booking) {
     return <PageBackground theme="success" className="flex items-center justify-center text-white">Loading booking...</PageBackground>;
   }
@@ -78,10 +111,26 @@ export default function BookingCompletePage() {
             <CheckCircle className="w-12 h-12 text-green-600" />
           </div>
           <h1 className="text-3xl font-black text-gray-900 mb-2">🎉 Booking Confirmed!</h1>
-          <p className="text-gray-600 text-lg">Your counseling session has been successfully booked.</p>
+          <p className="text-gray-600 text-lg">
+            Your counseling session has been successfully booked. Your counselor will add the video meeting link, and it will be emailed from info@jzdtechnologies.com.
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg p-8 mb-6">
+          {emailNotifications && (!emailNotifications.studentSent || !emailNotifications.counselorSent) && (
+            <div role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p>Payment is confirmed, but some confirmation emails have not been delivered.</p>
+              {emailError && <p className="mt-2">{emailError}</p>}
+              <button
+                type="button"
+                onClick={retryConfirmationEmails}
+                disabled={retryingEmails}
+                className="mt-3 rounded-lg border border-amber-300 px-3 py-2 font-bold disabled:opacity-50"
+              >
+                {retryingEmails ? 'Retrying...' : 'Retry confirmation emails'}
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
             <Calendar className="w-6 h-6 text-indigo-600" />
             <div>

@@ -44,6 +44,25 @@ body {
   }
 }
 
+.home-floating-card {
+  animation: home-card-float 5s ease-in-out infinite;
+}
+
+.home-floating-card-delayed {
+  animation-delay: -2.5s;
+}
+
+@keyframes home-card-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
 .scholar-page {
   position: relative;
   isolation: isolate;
@@ -160,6 +179,10 @@ body {
   .scholar-panel-card {
     animation: none;
     transition: none;
+  }
+
+  .home-floating-card {
+    animation: none;
   }
 }
 

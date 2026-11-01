@@ -15,7 +15,7 @@ export default function PageBackground({
   className = '',
 }: PageBackgroundProps) {
   const config = PAGE_THEMES[theme];
-  const isDark = ['booking', 'success', 'cbse', 'icse', 'stateboard', 'skills'].includes(theme);
+  const isDark = ['counseling', 'booking', 'success', 'cbse', 'icse', 'stateboard', 'skills'].includes(theme);
 
   return (
     <div className={`scholar-themed-page relative isolate min-h-screen ${className}`} style={{ background: config.gradient }}>

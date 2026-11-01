@@ -12,6 +12,10 @@ const ProtectedRoute = () => {
     return <Navigate to="/login" replace />;
   }
 
+  if (user.role !== 'STUDENT') {
+    return <Navigate to={user.role === 'ADMIN' ? '/admin' : '/counselor-dashboard'} replace />;
+  }
+
   return <Outlet />;
 };
 

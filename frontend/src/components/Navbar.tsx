@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Search, Menu, X, Bell } from 'lucide-react';
+import { Search, Menu, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import InAppNotificationCenter from './InAppNotificationCenter';
+import BrandMark from './BrandMark';
 
 const Navbar: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = useLocation().pathname;
-  if (
-    (pathname === '/counselor-dashboard' && user?.role === 'COUNSELOR') ||
-    (pathname === '/admin' && user?.role === 'ADMIN')
-  ) {
+  if (loading || user?.role === 'COUNSELOR' || user?.role === 'ADMIN') {
     return null;
   }
   const usesDarkTheme = [
@@ -24,6 +22,7 @@ const Navbar: React.FC = () => {
     '/courses/state',
     '/skills',
   ].includes(pathname);
+  const isCompactPage = pathname === '/' || pathname === '/counseling' || pathname === '/counselors';
   const navLinkColor = usesDarkTheme
     ? 'text-slate-300 hover:text-teal-300'
     : 'text-gray-500 hover:text-indigo-600';
@@ -35,25 +34,23 @@ const Navbar: React.FC = () => {
         : 'border-gray-100 bg-white/80'
     }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-20 items-center">
+        <div className={`flex h-16 justify-between items-center ${isCompactPage ? '' : 'md:h-20'}`}>
 
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <div className={`${usesDarkTheme ? 'bg-teal-500' : 'bg-indigo-600'} rounded-xl p-2`}>
-              <BookOpen className="text-white w-6 h-6" />
-            </div>
-            <span className={`text-2xl font-black tracking-tight ${usesDarkTheme ? 'text-white' : 'text-gray-900'}`}>
-              Scholar<span className={usesDarkTheme ? 'text-teal-300' : 'text-indigo-600'}>Ex</span>
+          <Link to="/" className="flex items-center gap-2.5">
+            <BrandMark className={`${isCompactPage ? 'h-9 w-11' : 'h-10 w-12'} rounded-lg bg-white object-contain p-0.5 shadow-sm`} />
+            <span className={`${isCompactPage ? 'text-xl' : 'text-2xl'} font-black tracking-tight ${usesDarkTheme ? 'text-white' : 'text-gray-900'}`}>
+              JZD Scholar<span className={usesDarkTheme ? 'text-teal-400' : 'text-indigo-600'}>Ex</span>
             </span>
           </Link>
 
           {/* */}
-          <div className="hidden md:flex items-center space-x-8">
+          <div className={`hidden md:flex items-center ${isCompactPage ? 'space-x-6' : 'space-x-8'}`}>
             <Link 
               to="/counseling" 
               className={`${navLinkColor} font-medium transition-colors`}
             >
-              Counseling
+              Career Counseling
             </Link>
             <Link 
               to="/courses/cbse" 
@@ -83,7 +80,7 @@ const Navbar: React.FC = () => {
           
 
           {/* Right Side: Search, Notifications, User Menu */}
-          <div className="flex items-center gap-4">
+          <div className={`flex items-center ${isCompactPage ? 'gap-3' : 'gap-4'}`}>
             
             {/* Search Button */}
             <button className={`hidden p-2 transition-colors sm:block ${
@@ -102,7 +99,7 @@ const Navbar: React.FC = () => {
               <div className="flex items-center gap-3">
                 {/* User Avatar */}
                 <div className="hidden sm:flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full border-2 font-bold shadow-sm ${
+                  <div className={`flex ${isCompactPage ? 'h-9 w-9' : 'h-10 w-10'} items-center justify-center rounded-full border-2 font-bold shadow-sm ${
                     usesDarkTheme
                       ? 'border-teal-400/40 bg-teal-400/15 text-teal-200'
                       : 'border-indigo-200 bg-indigo-100 text-indigo-600'
@@ -128,37 +125,39 @@ const Navbar: React.FC = () => {
                     usesDarkTheme ? 'border-white/10 bg-[#102e38]' : 'border-gray-100 bg-white'
                   }`}>
                     {user.role === 'STUDENT' && (
-                      <Link
-                        to="/dashboard"
-                        className={`block border-b px-4 py-3 text-sm font-medium ${
-                          usesDarkTheme
-                            ? 'border-white/10 text-slate-200 hover:bg-white/5 hover:text-teal-300'
-                            : 'border-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'
-                        }`}
-                      >
-                        📊 Dashboard
-                      </Link>
+                      <>
+                        <Link
+                          to="/dashboard"
+                          className={`block border-b px-4 py-3 text-sm font-medium ${
+                            usesDarkTheme
+                              ? 'border-white/10 text-slate-200 hover:bg-white/5 hover:text-teal-300'
+                              : 'border-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'
+                          }`}
+                        >
+                          📊 Dashboard
+                        </Link>
+                        <Link
+                          to="/my-reports"
+                          className={`block border-b px-4 py-3 text-sm font-medium ${
+                            usesDarkTheme
+                              ? 'border-white/10 text-slate-200 hover:bg-white/5 hover:text-teal-300'
+                              : 'border-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'
+                          }`}
+                        >
+                          📄 Reports
+                        </Link>
+                        <Link
+                          to="/profile"
+                          className={`block border-b px-4 py-3 text-sm font-medium ${
+                            usesDarkTheme
+                              ? 'border-white/10 text-slate-200 hover:bg-white/5 hover:text-teal-300'
+                              : 'border-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'
+                          }`}
+                        >
+                          ⚙️ Profile
+                        </Link>
+                      </>
                     )}
-                    <Link
-                      to="/my-reports"
-                      className={`block border-b px-4 py-3 text-sm font-medium ${
-                        usesDarkTheme
-                          ? 'border-white/10 text-slate-200 hover:bg-white/5 hover:text-teal-300'
-                          : 'border-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'
-                      }`}
-                    >
-                      📄 My Reports
-                    </Link>
-                    <Link
-                      to="/profile"
-                      className={`block border-b px-4 py-3 text-sm font-medium ${
-                        usesDarkTheme
-                          ? 'border-white/10 text-slate-200 hover:bg-white/5 hover:text-teal-300'
-                          : 'border-gray-100 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'
-                      }`}
-                    >
-                      ⚙️ Profile
-                    </Link>
                     {user.role === 'ADMIN' && (
                       <Link
                         to="/admin"
@@ -228,7 +227,7 @@ const Navbar: React.FC = () => {
               }`}
               onClick={() => setMobileMenuOpen(false)}
             >
-              📞 Counselling
+              Free Career Report
             </Link>
             <Link
               to="/courses/cbse"
@@ -271,34 +270,36 @@ const Navbar: React.FC = () => {
               <>
                 <hr className="my-2" />
                 {user.role === 'STUDENT' && (
-                  <Link
-                    to="/dashboard"
-                    className={`block rounded-lg px-4 py-2 font-medium ${
-                      usesDarkTheme ? 'text-slate-200 hover:bg-white/5 hover:text-teal-300' : 'text-gray-700 hover:bg-indigo-50'
-                    }`}
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    📊 Dashboard
-                  </Link>
+                  <>
+                    <Link
+                      to="/dashboard"
+                      className={`block rounded-lg px-4 py-2 font-medium ${
+                        usesDarkTheme ? 'text-slate-200 hover:bg-white/5 hover:text-teal-300' : 'text-gray-700 hover:bg-indigo-50'
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      📊 Dashboard
+                    </Link>
+                    <Link
+                      to="/my-reports"
+                      className={`block rounded-lg px-4 py-2 font-medium ${
+                        usesDarkTheme ? 'text-slate-200 hover:bg-white/5 hover:text-teal-300' : 'text-gray-700 hover:bg-indigo-50'
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      📄 Reports
+                    </Link>
+                    <Link
+                      to="/profile"
+                      className={`block rounded-lg px-4 py-2 font-medium ${
+                        usesDarkTheme ? 'text-slate-200 hover:bg-white/5 hover:text-teal-300' : 'text-gray-700 hover:bg-indigo-50'
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      ⚙️ Profile
+                    </Link>
+                  </>
                 )}
-                <Link
-                  to="/my-reports"
-                  className={`block rounded-lg px-4 py-2 font-medium ${
-                    usesDarkTheme ? 'text-slate-200 hover:bg-white/5 hover:text-teal-300' : 'text-gray-700 hover:bg-indigo-50'
-                  }`}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  📄 My Reports
-                </Link>
-                <Link
-                  to="/profile"
-                  className={`block rounded-lg px-4 py-2 font-medium ${
-                    usesDarkTheme ? 'text-slate-200 hover:bg-white/5 hover:text-teal-300' : 'text-gray-700 hover:bg-indigo-50'
-                  }`}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  ⚙️ Profile
-                </Link>
                 {user.role === 'ADMIN' && (
                   <Link
                     to="/admin"

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, BookOpen, GraduationCap, Sparkles } from 'lucide-react';
 import { registerUser } from '../services/api';
+import BrandMark from '../components/BrandMark';
 
 interface RegisterForm {
   name: string;
@@ -126,7 +127,12 @@ export default function RegisterPage(): React.ReactElement {
       });
 
       navigate(form.role === 'COUNSELOR' ? '/counselor/login' : '/student/login', {
-        state: { fromRegister: true, email: form.email, applicationEmailSent: response.data.applicationEmailSent },
+        state: {
+          fromRegister: true,
+          email: form.email,
+          applicationEmailSent: response.data.applicationEmailSent,
+          confirmationEmailSent: response.data.confirmationEmailSent,
+        },
       });
     } catch (err: any) {
       console.error('Registration error:', err);
@@ -170,9 +176,7 @@ export default function RegisterPage(): React.ReactElement {
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-5rem)] max-w-7xl flex-col px-5 py-6 sm:px-8 lg:px-12">
         <header className="flex items-center justify-between">
           <Link to="/" className="inline-flex items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-300">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-500 shadow-lg shadow-teal-950/40">
-              <BookOpen aria-hidden="true" className="h-6 w-6 text-white" />
-            </span>
+            <BrandMark className="h-11 w-14 rounded-xl bg-white object-contain p-0.5 shadow-lg shadow-teal-950/40" />
             <span className="text-xl font-black tracking-tight sm:text-2xl">
               Scholar<span className="text-teal-300">Ex</span>
             </span>

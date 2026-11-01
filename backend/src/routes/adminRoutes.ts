@@ -6,6 +6,7 @@ import {
   counselorApplicationReceivedEmail,
   sendEmail,
 } from '../services/email.service';
+import { counselingSlotIsInFuture } from '../services/counselingSchedule';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -37,7 +38,16 @@ router.get('/overview', authMiddleware, adminMiddleware, async (_req: Request, r
           id: true,
           isFreeSession: true,
           paymentStatus: true,
+          cancellationStatus: true,
+          cancellationRequestedAt: true,
+          cancellationReviewedAt: true,
+          cancellationReviewNote: true,
+          cancelledAt: true,
           amount: true,
+          razorpayOrderId: true,
+          razorpayPaymentId: true,
+          refundReference: true,
+          refundProcessedAt: true,
           createdAt: true,
           student: { select: { id: true, name: true, email: true } },
           slot: {
@@ -63,6 +73,130 @@ router.get('/overview', authMiddleware, adminMiddleware, async (_req: Request, r
   } catch (error) {
     console.error('Admin overview error:', error);
     res.status(500).json({ error: 'Failed to load student activity' });
+  }
+});
+
+router.patch('/bookings/:id/cancellation', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { status, reviewNote } = req.body;
+    if (status !== 'APPROVED' && status !== 'REJECTED') {
+      return res.status(400).json({ error: 'Cancellation decision must be APPROVED or REJECTED' });
+    }
+    if (reviewNote !== undefined && (typeof reviewNote !== 'string' || reviewNote.length > 2000)) {
+      return res.status(400).json({ error: 'Review note must be 2,000 characters or fewer' });
+    }
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: { slot: true },
+    });
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.cancellationStatus !== 'REQUESTED' || booking.cancelledAt) {
+      return res.status(409).json({ error: 'This booking has no pending cancellation request' });
+    }
+    if (status === 'APPROVED' && !counselingSlotIsInFuture(booking.slot.date, booking.slot.startTime)) {
+      return res.status(409).json({ error: 'A cancellation cannot be approved after the session has started' });
+    }
+
+    const updatedBooking = await prisma.$transaction(async (transaction) => {
+      const updated = await transaction.booking.updateMany({
+        where: {
+          id: booking.id,
+          cancellationStatus: 'REQUESTED',
+          cancelledAt: null,
+        },
+        data: {
+          cancellationStatus: status,
+          cancellationReviewedAt: new Date(),
+          cancellationReviewNote: typeof reviewNote === 'string' ? reviewNote.trim() || null : null,
+          cancelledAt: status === 'APPROVED' ? new Date() : null,
+        },
+      });
+      if (updated.count !== 1) throw new Error('CANCELLATION_ALREADY_REVIEWED');
+
+      if (status === 'APPROVED') {
+        const released = await transaction.slot.updateMany({
+          where: { id: booking.slotId, isBooked: true },
+          data: { isBooked: false },
+        });
+        if (released.count !== 1) throw new Error('BOOKING_SLOT_NOT_RESERVED');
+      }
+
+      return transaction.booking.findUnique({
+        where: { id: booking.id },
+        select: {
+          id: true,
+          cancellationStatus: true,
+          cancellationReviewedAt: true,
+          cancellationReviewNote: true,
+          cancelledAt: true,
+        },
+      });
+    });
+
+    return res.json(updatedBooking);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'CANCELLATION_ALREADY_REVIEWED') {
+      return res.status(409).json({ error: 'This cancellation request has already been reviewed' });
+    }
+    if (error instanceof Error && error.message === 'BOOKING_SLOT_NOT_RESERVED') {
+      return res.status(409).json({ error: 'The booking slot is no longer reserved' });
+    }
+    console.error('Booking cancellation review failed:', error);
+    return res.status(500).json({ error: 'Failed to review cancellation request' });
+  }
+});
+
+router.patch('/bookings/:id/refund', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  try {
+    const refundReference = typeof req.body.refundReference === 'string'
+      ? req.body.refundReference.trim()
+      : '';
+    if (!refundReference || refundReference.length > 120) {
+      return res.status(400).json({ error: 'Enter a refund reference of up to 120 characters' });
+    }
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        isFreeSession: true,
+        paymentStatus: true,
+        cancellationStatus: true,
+        cancelledAt: true,
+      },
+    });
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (
+      booking.isFreeSession ||
+      booking.paymentStatus !== 'PAID' ||
+      booking.cancellationStatus !== 'APPROVED' ||
+      !booking.cancelledAt
+    ) {
+      return res.status(409).json({ error: 'Only paid, cancelled bookings can be marked as refunded' });
+    }
+
+    const updated = await prisma.booking.updateMany({
+      where: {
+        id: booking.id,
+        paymentStatus: 'PAID',
+        cancellationStatus: 'APPROVED',
+        cancelledAt: { not: null },
+      },
+      data: {
+        paymentStatus: 'REFUNDED',
+        refundReference,
+        refundProcessedAt: new Date(),
+      },
+    });
+    if (updated.count !== 1) {
+      return res.status(409).json({ error: 'Booking status changed. Refresh and try again.' });
+    }
+
+    return res.json({ id: booking.id, paymentStatus: 'REFUNDED', refundReference });
+  } catch (error) {
+    console.error('Booking refund recording failed:', error);
+    return res.status(500).json({ error: 'Failed to record the refund' });
   }
 });
 

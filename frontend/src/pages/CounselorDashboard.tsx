@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import BrandMark from '../components/BrandMark';
+import CounselorChecklistModal from '../components/CounselorChecklistModal';
 import { generateReportDraft, uploadReport } from '../services/api';
 import { formatSlotDate } from '../utils/slotDate';
 import {
@@ -20,7 +22,7 @@ import {
   Sparkles,
   UserCircle,
   Award,
-  BookOpen,
+  Video,
 } from 'lucide-react';
 import {
   enrollInCounselorCertification,
@@ -28,6 +30,7 @@ import {
   getMyCounselorAvailability,
   getMyCounselorProfile,
   updateMyCounselorMeetingLink,
+  updateMyCounselorAvailability,
   updateMyCounselorProfile,
 } from '../services/api';
 
@@ -36,9 +39,14 @@ interface Booking {
   id: string;
   isFreeSession: boolean;
   paymentStatus: string;
+  cancellationStatus: string;
+  cancelledAt: string | null;
   amount: number;
   report?: { createdAt: string; approvalStatus: string } | null;
   meetingLink: string | null;
+  meetingLinkEmailSentAt: string | null;
+  sessionChecklistAnswers: Record<string, string> | null;
+  sessionChecklistCompletedAt: string | null;
   marksPercentage: number | null;
   educationBackground: string | null;
   currentStream: string | null;
@@ -47,10 +55,44 @@ interface Booking {
   subjectPreferences: string | null;
   hobbies: string | null;
   subjectAssessments: Array<{ subject: string; overall: string; comments: string }> | null;
+  studentName: string | null;
+  studentAge: number | null;
+  schoolCollege: string | null;
+  fatherName: string | null;
+  fatherAge: number | null;
+  fatherOcuupation: string | null;
+  fatherEducation: string | null;
+  motherName: string | null;
+  motherAge: number | null;
+  motherOcuupation: string | null;
+  motherEducation: string | null;
+  AnnualfamilyIncome: number | null;
+  familyType: string | null;
+  address: string | null;
+  phoneNo: string | null;
+  emailId: string | null;
   student: {
     id: string;
     name: string;
     email: string;
+    careerAssessment: {
+      studentClass: string;
+      schoolCollege: string;
+      phoneNumber: string;
+      educationBoard: string;
+      academicPerformance: string;
+      strongSubjects: string;
+      dislikedSubjects: string;
+      hobbies: string;
+      strengths: string;
+      improvementAreas: string;
+      coursesOfInterest: string;
+      learningStyle: string;
+      likes: string;
+      dislikes: string;
+      careerGoal: string;
+      parentsAspiration: string;
+    } | null;
   };
   slot: {
     id: string;
@@ -91,7 +133,26 @@ interface Slot {
   date: string;
   startTime: string;
   endTime: string;
+  isAvailable: boolean;
   isBooked: boolean;
+}
+
+const COUNSELING_TIME_OPTIONS = [
+  { startTime: '17:00', endTime: '18:00', label: '5:00 PM – 6:00 PM' },
+  { startTime: '18:00', endTime: '19:00', label: '6:00 PM – 7:00 PM' },
+  { startTime: '19:00', endTime: '20:00', label: '7:00 PM – 8:00 PM' },
+];
+
+function hasSessionEnded(booking: Booking): boolean {
+  const date = booking.slot.date.slice(0, 10);
+  const sessionEnd = new Date(`${date}T${booking.slot.endTime}:00+05:30`);
+  return sessionEnd.getTime() < Date.now();
+}
+
+function hasSessionStarted(booking: Booking): boolean {
+  const date = booking.slot.date.slice(0, 10);
+  const sessionStart = new Date(`${date}T${booking.slot.startTime}:00+05:30`);
+  return sessionStart.getTime() <= Date.now();
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
@@ -137,7 +198,7 @@ const EmptyState = ({
   </div>
 );
 
-// ─── Report Upload Modal ──────────────────────────────────────────────────────
+// ─── Report Preparation Modal ────────────────────────────────────────────────
 const ReportModal = ({
   booking,
   onClose,
@@ -190,7 +251,7 @@ const ReportModal = ({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-100 p-6 flex justify-between items-center rounded-t-[32px]">
           <div>
-            <h2 className="text-xl font-black text-gray-900">Upload Session Report</h2>
+            <h2 className="text-xl font-black text-gray-900">Prepare Student Report</h2>
             <p className="text-sm text-gray-500 mt-1">
               {booking.student.name} • {new Date(booking.slot.date).toLocaleDateString('en-IN')}
             </p>
@@ -206,14 +267,14 @@ const ReportModal = ({
         {/* Body */}
         <div className="p-6 space-y-5">
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
-            <p className="mb-3 text-sm text-violet-900">Generate an AI draft using only relevant academic, subject, and counselling details. Family, contact, and demographic details are excluded; selected details are sent to your configured AI provider. Review before submission.</p>
+            <p className="mb-3 text-sm text-violet-900">Selected academic and career responses are sent to your configured AI provider. Family, relationship, and emotional-wellbeing answers remain in ScholarEx and are excluded from AI generation. Review and edit the draft before counselor approval, administrator review, and delivery to the student.</p>
             <button
               onClick={handleGenerate}
               disabled={generating || submitting}
               className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2 font-bold text-white disabled:opacity-50"
             >
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {generating ? 'Generating...' : 'Generate AI draft'}
+              {generating ? 'Generating...' : 'Generate AI report draft'}
             </button>
             {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           </div>
@@ -281,7 +342,7 @@ const ReportModal = ({
             ) : (
               <>
                 <Save className="w-5 h-5" />
-                Save Report
+                Submit for Admin Approval
               </>
             )}
           </button>
@@ -298,6 +359,10 @@ export default function CounselorDashboard() {
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [availabilityDate, setAvailabilityDate] = useState('');
+  const [selectedAvailabilityTimes, setSelectedAvailabilityTimes] = useState<string[]>([]);
+  const [savingAvailability, setSavingAvailability] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
   const [profile, setProfile] = useState<CounselorProfile | null>(null);
   const [profileDraft, setProfileDraft] = useState<CounselorProfileDraft>({
     name: '',
@@ -310,14 +375,19 @@ export default function CounselorDashboard() {
     certificationDetails: '',
   });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'availability' | 'reports' | 'profile'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'students' | 'meetings' | 'availability' | 'reports' | 'profile'>('overview');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [selectedChecklistBooking, setSelectedChecklistBooking] = useState<Booking | null>(null);
   const [submittingReport, setSubmittingReport] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [enrollingCertification, setEnrollingCertification] = useState(false);
   const [savingMeetingBookingId, setSavingMeetingBookingId] = useState('');
   const [meetingLinkDrafts, setMeetingLinkDrafts] = useState<Record<string, string>>({});
   const [pageError, setPageError] = useState('');
+
+  const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 10);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -383,6 +453,56 @@ export default function CounselorDashboard() {
     }
   };
 
+  const handleAvailabilityDateChange = (date: string) => {
+    setAvailabilityDate(date);
+    setAvailabilityError('');
+    setSelectedAvailabilityTimes(
+      slots
+        .filter((slot) =>
+          new Date(slot.date).toISOString().slice(0, 10) === date &&
+          slot.isAvailable &&
+          !slot.isBooked
+        )
+        .map((slot) => slot.startTime)
+    );
+  };
+
+  const handleSaveAvailability = async () => {
+    if (!token || !availabilityDate) {
+      setAvailabilityError('Choose a date before saving availability.');
+      return;
+    }
+    const weekday = new Date(`${availabilityDate}T00:00:00`).getDay();
+    if (weekday === 0 || weekday === 6) {
+      setAvailabilityError('Availability can only be set for weekdays.');
+      return;
+    }
+
+    try {
+      setSavingAvailability(true);
+      setAvailabilityError('');
+      const { data } = await updateMyCounselorAvailability(
+        token,
+        availabilityDate,
+        selectedAvailabilityTimes
+      );
+      setSlots(data);
+      setSelectedAvailabilityTimes(
+        data
+          .filter((slot: Slot) =>
+            new Date(slot.date).toISOString().slice(0, 10) === availabilityDate &&
+            slot.isAvailable &&
+            !slot.isBooked
+          )
+          .map((slot: Slot) => slot.startTime)
+      );
+    } catch (err: any) {
+      setAvailabilityError(err?.response?.data?.error || 'Failed to update availability.');
+    } finally {
+      setSavingAvailability(false);
+    }
+  };
+
   const handleCertificationEnrollment = async () => {
     if (!token) return;
     try {
@@ -406,8 +526,21 @@ export default function CounselorDashboard() {
         token
       );
       setBookings((current) => current.map((booking) =>
-        booking.id === bookingId ? { ...booking, meetingLink: data.meetingLink } : booking
+        booking.id === bookingId
+          ? {
+              ...booking,
+              meetingLink: data.meetingLink,
+              meetingLinkEmailSentAt: data.meetingLinkEmailSent ? new Date().toISOString() : null,
+            }
+          : booking
       ));
+      if (data.meetingLinkEmailDeferred) {
+        alert('The meeting link was saved. It will be emailed after the paid booking is confirmed.');
+      } else if (data.meetingLink && !data.meetingLinkEmailSent) {
+        alert('The meeting link was saved, but its email could not be sent. Retry after fixing email delivery.');
+      } else if (data.meetingLinkEmailSent) {
+        alert('The meeting link was saved and emailed to the student.');
+      }
     } catch (err: any) {
       alert(err?.response?.data?.error || 'Failed to update the meeting link.');
     } finally {
@@ -428,16 +561,36 @@ export default function CounselorDashboard() {
     }
   };
 
+  const handleChecklistSaved = (bookingId: string, answers: Record<string, string>, completedAt: string) => {
+    setBookings((current) => current.map((booking) =>
+      booking.id === bookingId
+        ? {
+            ...booking,
+            sessionChecklistAnswers: answers,
+            sessionChecklistCompletedAt: completedAt,
+          }
+        : booking
+    ));
+    setSelectedChecklistBooking(null);
+  };
+
   // ── Computed Stats ──────────────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0];
   const todaysSessions = bookings.filter((b) => b.slot.date === today);
   const upcomingSessions = bookings.filter(
-    (b) => new Date(b.slot.date) >= new Date() && b.paymentStatus === 'PAID'
+    (b) => !b.cancelledAt && new Date(b.slot.date) >= new Date() && b.paymentStatus === 'PAID'
   );
   const pendingReports = bookings.filter(
-    (b) => new Date(b.slot.date) < new Date() && !b.report
+    (b) =>
+      !b.cancelledAt &&
+      b.sessionChecklistCompletedAt &&
+      !b.report &&
+      (b.isFreeSession || b.paymentStatus === 'PAID')
   );
   const completedSessions = bookings.filter((b) => b.report);
+  const eligibleMeetingBookings = bookings.filter(
+    (booking) => !booking.cancelledAt
+  );
 
   if (loading) {
     return (
@@ -457,6 +610,10 @@ export default function CounselorDashboard() {
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-violet-400/10 rounded-full blur-3xl" />
 
         <div className="max-w-7xl mx-auto px-6 py-12 relative z-10">
+          <Link to="/" className="mb-8 inline-flex items-center gap-2.5 text-xl font-black tracking-tight text-white">
+            <BrandMark className="h-10 w-12 rounded-lg bg-white object-contain p-0.5 shadow-sm" />
+            Scholar<span className="text-teal-200">Ex</span>
+          </Link>
           <div className="flex justify-between items-start">
             <div className="flex items-center gap-6">
               <div className="w-20 h-20 rounded-[24px] bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-3xl font-black text-white shadow-xl">
@@ -532,13 +689,15 @@ export default function CounselorDashboard() {
           {[
             { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="w-4 h-4" /> },
             { key: 'sessions', label: 'Sessions', icon: <Calendar className="w-4 h-4" /> },
+            { key: 'students', label: 'Student details', icon: <Users className="w-4 h-4" /> },
+            { key: 'meetings', label: 'Session links', icon: <Video className="w-4 h-4" /> },
             { key: 'availability', label: 'Availability', icon: <CalendarPlus className="w-4 h-4" /> },
             { key: 'reports', label: 'Reports', icon: <FileText className="w-4 h-4" /> },
             { key: 'profile', label: 'My profile', icon: <UserCircle className="w-4 h-4" /> },
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
+              onClick={() => setActiveTab(tab.key as typeof activeTab)}
               className={`flex items-center gap-2 px-6 py-4 font-bold text-sm transition-all border-b-2 -mb-px whitespace-nowrap ${
                 activeTab === tab.key
                   ? 'border-indigo-600 text-indigo-600'
@@ -624,7 +783,7 @@ export default function CounselorDashboard() {
                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-2xl transition-colors flex items-center justify-center gap-2"
                       >
                         <Upload className="w-4 h-4" />
-                        Upload Report
+                        Prepare AI Report
                       </button>
                     </div>
                   ))}
@@ -652,7 +811,7 @@ export default function CounselorDashboard() {
                   .slice()
                   .sort((a, b) => new Date(b.slot.date).getTime() - new Date(a.slot.date).getTime())
                   .map((b) => {
-                    const isPast = new Date(b.slot.date) < new Date();
+                    const isPast = hasSessionEnded(b);
                     return (
                       <div key={b.id} className="scholar-panel-card bg-white rounded-[24px] border border-gray-100 p-6 shadow-sm">
                         <div className="flex justify-between items-start mb-4">
@@ -661,12 +820,14 @@ export default function CounselorDashboard() {
                           </div>
                           <span
                             className={`text-xs font-bold px-3 py-1 rounded-full ${
-                              b.paymentStatus === 'PAID'
+                              b.cancelledAt
+                                ? 'bg-slate-100 text-slate-600'
+                                : b.paymentStatus === 'PAID'
                                 ? 'bg-emerald-50 text-emerald-600'
                                 : 'bg-amber-50 text-amber-600'
                             }`}
                           >
-                            {b.paymentStatus === 'PAID' ? 'Confirmed' : 'Pending'}
+                            {b.cancelledAt ? 'Cancelled' : b.paymentStatus === 'PAID' ? 'Confirmed' : 'Pending'}
                           </span>
                         </div>
                         <p className="font-black text-gray-900">{b.student.name}</p>
@@ -687,7 +848,11 @@ export default function CounselorDashboard() {
                         <details className="mt-4 rounded-xl bg-slate-50 p-4">
                           <summary className="cursor-pointer text-sm font-bold text-slate-700">View counselling form</summary>
                           <dl className="mt-3 space-y-2 text-sm text-slate-600">
-                            <div><dt className="font-semibold">Student</dt><dd>{b.student.name} · {b.student.email}</dd></div>
+                            <div><dt className="font-semibold">Student</dt><dd>{b.studentName || b.student.name}{b.studentAge !== null ? ` · Age ${b.studentAge}` : ''}</dd></div>
+                            <div><dt className="font-semibold">Contact email</dt><dd>{b.emailId || b.student.email}</dd></div>
+                            {b.phoneNo && <div><dt className="font-semibold">Phone</dt><dd>{b.phoneNo}</dd></div>}
+                            {b.address && <div><dt className="font-semibold">Address</dt><dd>{b.address}</dd></div>}
+                            {b.schoolCollege && <div><dt className="font-semibold">School / college</dt><dd>{b.schoolCollege}</dd></div>}
                             {b.educationBackground && <div><dt className="font-semibold">Education</dt><dd>{b.educationBackground}</dd></div>}
                             {b.currentStream && <div><dt className="font-semibold">Current stream</dt><dd>{b.currentStream}</dd></div>}
                             {b.marksPercentage !== null && <div><dt className="font-semibold">Marks</dt><dd>{b.marksPercentage}%</dd></div>}
@@ -695,6 +860,16 @@ export default function CounselorDashboard() {
                             {b.areasOfInterest && <div><dt className="font-semibold">Interests</dt><dd>{b.areasOfInterest}</dd></div>}
                             {b.subjectPreferences && <div><dt className="font-semibold">Subject preferences</dt><dd>{b.subjectPreferences}</dd></div>}
                             {b.hobbies && <div><dt className="font-semibold">Hobbies</dt><dd>{b.hobbies}</dd></div>}
+                            {b.familyType && <div><dt className="font-semibold">Family type</dt><dd>{b.familyType}</dd></div>}
+                            {b.AnnualfamilyIncome !== null && <div><dt className="font-semibold">Annual family income</dt><dd>{b.AnnualfamilyIncome}</dd></div>}
+                            {b.fatherName && <div><dt className="font-semibold">Father's name</dt><dd>{b.fatherName}</dd></div>}
+                            {b.fatherAge !== null && <div><dt className="font-semibold">Father's age</dt><dd>{b.fatherAge}</dd></div>}
+                            {b.fatherOcuupation && <div><dt className="font-semibold">Father's occupation</dt><dd>{b.fatherOcuupation}</dd></div>}
+                            {b.fatherEducation && <div><dt className="font-semibold">Father's education</dt><dd>{b.fatherEducation}</dd></div>}
+                            {b.motherName && <div><dt className="font-semibold">Mother's name</dt><dd>{b.motherName}</dd></div>}
+                            {b.motherAge !== null && <div><dt className="font-semibold">Mother's age</dt><dd>{b.motherAge}</dd></div>}
+                            {b.motherOcuupation && <div><dt className="font-semibold">Mother's occupation</dt><dd>{b.motherOcuupation}</dd></div>}
+                            {b.motherEducation && <div><dt className="font-semibold">Mother's education</dt><dd>{b.motherEducation}</dd></div>}
                             {b.subjectAssessments?.map((assessment, index) => (
                               <div key={`${assessment.subject}-${index}`}>
                                 <dt className="font-semibold">{assessment.subject} assessment · {assessment.overall}</dt>
@@ -703,48 +878,60 @@ export default function CounselorDashboard() {
                             ))}
                           </dl>
                         </details>
-                        <div className="mt-4 space-y-2">
-                          <label htmlFor={`meeting-link-${b.id}`} className="block text-sm font-semibold text-slate-700">Secure meeting link</label>
-                          <input
-                            id={`meeting-link-${b.id}`}
-                            type="url"
-                            value={meetingLinkDrafts[b.id] || ''}
-                            onChange={(event) => setMeetingLinkDrafts((current) => ({ ...current, [b.id]: event.target.value }))}
-                            placeholder="https://meeting-provider.example/..."
-                            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
-                          />
-                          <button
-                            onClick={() => handleSaveMeetingLink(b.id)}
-                            disabled={savingMeetingBookingId === b.id || (meetingLinkDrafts[b.id] || '') === (b.meetingLink || '')}
-                            className="rounded-xl border border-indigo-200 px-4 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                          >
-                            {savingMeetingBookingId === b.id ? 'Saving...' : b.meetingLink ? 'Update meeting link' : 'Save meeting link'}
-                          </button>
-                        </div>
                         <div className="mt-4 pt-4 border-t border-gray-100">
-                          {isPast && !b.report ? (
+                          {b.cancelledAt ? (
+                            <span className="flex items-center justify-center text-slate-500 font-semibold py-3">This appointment was cancelled</span>
+                          ) : b.meetingLink && b.meetingLinkEmailSentAt ? (
+                            <a
+                              href={b.meetingLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mb-3 block w-full rounded-xl border border-indigo-200 bg-indigo-50 py-3 text-center font-bold text-indigo-700 hover:bg-indigo-100"
+                            >
+                              Open session
+                            </a>
+                          ) : null}
+                          {!b.cancelledAt && b.sessionChecklistCompletedAt && !b.report ? (
                             <button
                               onClick={() => setSelectedBooking(b)}
                               className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-2xl transition-colors flex items-center justify-center gap-2"
                             >
-                              <Upload className="w-4 h-4" />
-                              Upload Report
+                              <Sparkles className="w-4 h-4" />
+                              Prepare AI Report
                             </button>
-                          ) : b.report ? (
-                            <span className="flex items-center justify-center gap-2 text-emerald-600 font-bold py-3">
+                          ) : !b.cancelledAt && b.report ? (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/booking/${b.id}/report`)}
+                              className="flex w-full items-center justify-center gap-2 py-3 font-bold text-emerald-700 hover:text-emerald-800"
+                            >
                               <CheckCircle2 className="w-4 h-4" />
                               {b.report.approvalStatus === 'APPROVED'
-                                ? 'Report Approved'
+                                ? 'Report approved'
                                 : b.report.approvalStatus === 'REJECTED'
-                                  ? 'Changes Requested'
-                                  : 'Awaiting Admin Review'}
-                            </span>
-                          ) : (
-                            <span className="flex items-center justify-center gap-2 text-gray-400 font-bold py-3">
+                                  ? 'Changes requested'
+                                  : b.report.approvalStatus === 'COUNSELOR_REVIEW'
+                                    ? 'Review and approve report'
+                                    : 'Awaiting admin review'}
+                            </button>
+                          ) : !b.cancelledAt && !b.sessionChecklistCompletedAt &&
+                            hasSessionStarted(b) &&
+                            (b.isFreeSession || b.paymentStatus === 'PAID') &&
+                            b.meetingLink &&
+                            b.meetingLinkEmailSentAt ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedChecklistBooking(b)}
+                              className="w-full rounded-2xl bg-teal-700 py-3 font-bold text-white transition-colors hover:bg-teal-800"
+                            >
+                              Open counselor checklist
+                            </button>
+                          ) : !b.cancelledAt ? (
+                            <span className="flex items-center justify-center gap-2 py-3 font-bold text-gray-400">
                               <Clock className="w-4 h-4" />
-                              Upcoming
+                              {isPast ? 'Session checklist not ready' : 'Upcoming'}
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     );
@@ -754,6 +941,183 @@ export default function CounselorDashboard() {
           </div>
         )}
 
+        {activeTab === 'students' && (
+          <section>
+            <h2 className="mb-2 text-2xl font-black text-gray-900">Student details</h2>
+            <p className="mb-6 text-sm text-gray-600">
+              Student assessment details for students assigned to your sessions. These details are private to your counselor account.
+            </p>
+            {bookings.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                title="No student details yet"
+                message="Student details will appear here after a student books an appointment with you."
+              />
+            ) : (
+              <div className="space-y-5">
+                {bookings.map((booking) => (
+                  <article key={booking.id} className="scholar-panel-card rounded-[24px] border border-gray-100 bg-white p-6 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-lg font-black text-gray-900">
+                          {booking.studentName || booking.student.name}
+                        </h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                          {booking.emailId || booking.student.email}
+                          {booking.phoneNo ? ` · ${booking.phoneNo}` : ''}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {new Date(booking.slot.date).toLocaleDateString('en-IN')} · {booking.slot.startTime}–{booking.slot.endTime}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+                        booking.cancelledAt
+                          ? 'bg-slate-100 text-slate-600'
+                          : booking.paymentStatus === 'PAID'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {booking.cancelledAt ? 'Cancelled' : booking.paymentStatus === 'PAID' ? 'Confirmed' : 'Payment pending'}
+                      </span>
+                    </div>
+                    <dl className="mt-5 grid gap-4 border-t border-gray-100 pt-5 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                      {booking.studentAge !== null && <div><dt className="font-semibold text-gray-500">Age</dt><dd className="mt-1 text-gray-900">{booking.studentAge}</dd></div>}
+                      {booking.schoolCollege && <div><dt className="font-semibold text-gray-500">School / college</dt><dd className="mt-1 text-gray-900">{booking.schoolCollege}</dd></div>}
+                      {booking.educationBackground && <div><dt className="font-semibold text-gray-500">Education background</dt><dd className="mt-1 text-gray-900">{booking.educationBackground}</dd></div>}
+                      {booking.currentStream && <div><dt className="font-semibold text-gray-500">Current class / stream</dt><dd className="mt-1 text-gray-900">{booking.currentStream}</dd></div>}
+                      {booking.marksPercentage !== null && <div><dt className="font-semibold text-gray-500">Latest marks</dt><dd className="mt-1 text-gray-900">{booking.marksPercentage}%</dd></div>}
+                      {booking.careerAspiration && <div><dt className="font-semibold text-gray-500">Career aspiration</dt><dd className="mt-1 text-gray-900">{booking.careerAspiration}</dd></div>}
+                      {booking.areasOfInterest && <div><dt className="font-semibold text-gray-500">Areas of interest</dt><dd className="mt-1 text-gray-900">{booking.areasOfInterest}</dd></div>}
+                      {booking.subjectPreferences && <div><dt className="font-semibold text-gray-500">Subject preferences</dt><dd className="mt-1 text-gray-900">{booking.subjectPreferences}</dd></div>}
+                      {booking.hobbies && <div><dt className="font-semibold text-gray-500">Hobbies</dt><dd className="mt-1 text-gray-900">{booking.hobbies}</dd></div>}
+                      {booking.address && <div><dt className="font-semibold text-gray-500">Address</dt><dd className="mt-1 text-gray-900">{booking.address}</dd></div>}
+                      {booking.familyType && <div><dt className="font-semibold text-gray-500">Family type</dt><dd className="mt-1 text-gray-900">{booking.familyType}</dd></div>}
+                      {booking.AnnualfamilyIncome !== null && <div><dt className="font-semibold text-gray-500">Annual family income</dt><dd className="mt-1 text-gray-900">{booking.AnnualfamilyIncome}</dd></div>}
+                      {booking.fatherName && <div><dt className="font-semibold text-gray-500">Father's name</dt><dd className="mt-1 text-gray-900">{booking.fatherName}</dd></div>}
+                      {booking.fatherAge !== null && <div><dt className="font-semibold text-gray-500">Father's age</dt><dd className="mt-1 text-gray-900">{booking.fatherAge}</dd></div>}
+                      {booking.fatherOcuupation && <div><dt className="font-semibold text-gray-500">Father's occupation</dt><dd className="mt-1 text-gray-900">{booking.fatherOcuupation}</dd></div>}
+                      {booking.fatherEducation && <div><dt className="font-semibold text-gray-500">Father's education</dt><dd className="mt-1 text-gray-900">{booking.fatherEducation}</dd></div>}
+                      {booking.motherName && <div><dt className="font-semibold text-gray-500">Mother's name</dt><dd className="mt-1 text-gray-900">{booking.motherName}</dd></div>}
+                      {booking.motherAge !== null && <div><dt className="font-semibold text-gray-500">Mother's age</dt><dd className="mt-1 text-gray-900">{booking.motherAge}</dd></div>}
+                      {booking.motherOcuupation && <div><dt className="font-semibold text-gray-500">Mother's occupation</dt><dd className="mt-1 text-gray-900">{booking.motherOcuupation}</dd></div>}
+                      {booking.motherEducation && <div><dt className="font-semibold text-gray-500">Mother's education</dt><dd className="mt-1 text-gray-900">{booking.motherEducation}</dd></div>}
+                    </dl>
+                    {booking.student.careerAssessment && (
+                      <div className="mt-5 border-t border-gray-100 pt-5">
+                        <h4 className="text-sm font-bold text-gray-700">Student career assessment</h4>
+                        <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                          {([
+                            ['Class / level', booking.student.careerAssessment.studentClass],
+                            ['School / college', booking.student.careerAssessment.schoolCollege],
+                            ['Education board', booking.student.careerAssessment.educationBoard],
+                            ['Academic performance', booking.student.careerAssessment.academicPerformance],
+                            ['Subjects liked / strong in', booking.student.careerAssessment.strongSubjects],
+                            ['Subjects disliked / difficult', booking.student.careerAssessment.dislikedSubjects],
+                            ['Hobbies and talents', booking.student.careerAssessment.hobbies],
+                            ['Known strengths', booking.student.careerAssessment.strengths],
+                            ['Improvement areas', booking.student.careerAssessment.improvementAreas],
+                            ['Courses of interest', booking.student.careerAssessment.coursesOfInterest],
+                            ['Learning style', booking.student.careerAssessment.learningStyle],
+                            ['Likes', booking.student.careerAssessment.likes],
+                            ['Dislikes', booking.student.careerAssessment.dislikes],
+                            ['Career goal', booking.student.careerAssessment.careerGoal],
+                            ['Parent aspiration', booking.student.careerAssessment.parentsAspiration],
+                          ] as const).filter(([, value]) => value).map(([label, value]) => (
+                            <div key={label}>
+                              <dt className="font-semibold text-gray-500">{label}</dt>
+                              <dd className="mt-1 whitespace-pre-wrap text-gray-900">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    )}
+                    {booking.subjectAssessments?.length ? (
+                      <div className="mt-5 border-t border-gray-100 pt-5">
+                        <h4 className="text-sm font-bold text-gray-700">Subject assessments</h4>
+                        <ul className="mt-3 space-y-3">
+                          {booking.subjectAssessments.map((assessment, index) => (
+                            <li key={`${assessment.subject}-${index}`} className="rounded-xl bg-slate-50 p-4 text-sm">
+                              <p className="font-semibold text-gray-900">{assessment.subject} · {assessment.overall}</p>
+                              {assessment.comments && <p className="mt-1 text-gray-600">{assessment.comments}</p>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeTab === 'meetings' && (
+          <section>
+            <h2 className="text-2xl font-black text-gray-900">Session links</h2>
+            <p className="mb-6 mt-2 text-sm text-gray-600">
+              Add a secure Google Meet or Zoom link for any booked session. Students receive the link from info@jzdtechnologies.com. Free-session links are emailed immediately; paid-session links are emailed once payment is confirmed.
+            </p>
+            {eligibleMeetingBookings.length === 0 ? (
+              <EmptyState
+                icon={Video}
+                title="No active sessions"
+                message="Meeting links are available for every active booked session, including free and unpaid paid sessions."
+              />
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {eligibleMeetingBookings.map((booking) => (
+                  <section key={booking.id} className="scholar-panel-card rounded-[24px] border border-gray-100 bg-white p-6 shadow-sm">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="font-black text-gray-900">{booking.student.name}</h3>
+                        <p className="mt-1 text-sm text-gray-500">{booking.emailId || booking.student.email}</p>
+                      </div>
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                        {booking.isFreeSession ? 'Free session' : `Paid · ${booking.paymentStatus.toLowerCase()}`}
+                      </span>
+                    </div>
+                    <p className="mt-4 text-sm text-gray-600">
+                      {new Date(booking.slot.date).toLocaleDateString('en-IN')} · {booking.slot.startTime}–{booking.slot.endTime}
+                    </p>
+                    <div className="mt-5 space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                      <label htmlFor={`meeting-link-${booking.id}`} className="block text-sm font-semibold text-slate-700">
+                        Secure meeting link
+                      </label>
+                      <input
+                        id={`meeting-link-${booking.id}`}
+                        type="url"
+                        value={meetingLinkDrafts[booking.id] || ''}
+                        onChange={(event) => setMeetingLinkDrafts((current) => ({ ...current, [booking.id]: event.target.value }))}
+                        placeholder="https://meet.google.com/... or https://zoom.us/..."
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                      />
+                      <button
+                        onClick={() => handleSaveMeetingLink(booking.id)}
+                        disabled={savingMeetingBookingId === booking.id || (
+                          (meetingLinkDrafts[booking.id] || '') === (booking.meetingLink || '') &&
+                          (!booking.meetingLink || Boolean(booking.meetingLinkEmailSentAt))
+                        )}
+                        className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {savingMeetingBookingId === booking.id
+                          ? 'Saving...'
+                          : booking.meetingLink && !booking.meetingLinkEmailSentAt
+                            ? 'Retry session link email'
+                            : booking.meetingLink
+                              ? 'Update meeting link'
+                              : 'Save and email link'}
+                      </button>
+                      {booking.meetingLinkEmailSentAt && (
+                        <p className="text-xs text-emerald-700">Meeting link emailed to the student.</p>
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* ═════════════════════════════════════════════════════════════════
             TAB: AVAILABILITY
         ════════════════════════════════════════════════════════════════ */}
@@ -761,14 +1125,83 @@ export default function CounselorDashboard() {
           <div>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-gray-900">My Availability</h2>
-              <p className="text-sm text-gray-500">Weekday slots are generated automatically.</p>
+              <p className="text-sm text-gray-500">Weekdays · 5:00 PM–8:00 PM IST</p>
             </div>
 
+            <section className="mb-8 rounded-[20px] border border-gray-100 bg-white p-6 shadow-sm">
+              <h3 className="text-lg font-bold text-gray-900">Set your session times</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Choose a weekday and select the one-hour sessions you can offer. Changes are reflected in student booking.
+              </p>
+              <label className="mt-5 block max-w-xs text-sm font-semibold text-gray-700">
+                Availability date
+                <input
+                  type="date"
+                  min={localToday}
+                  value={availabilityDate}
+                  onChange={(event) => handleAvailabilityDateChange(event.target.value)}
+                  className="mt-2 block w-full rounded-xl border border-gray-200 px-4 py-3"
+                />
+              </label>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {COUNSELING_TIME_OPTIONS.map((option) => {
+                  const slot = slots.find((candidate) =>
+                    availabilityDate &&
+                    new Date(candidate.date).toISOString().slice(0, 10) === availabilityDate &&
+                    candidate.startTime === option.startTime &&
+                    candidate.isBooked
+                  );
+                  return (
+                    <label
+                      key={option.startTime}
+                      className={`flex items-center gap-3 rounded-xl border p-4 ${
+                        slot ? 'cursor-not-allowed border-gray-200 bg-gray-50' : 'cursor-pointer border-gray-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(slot) || selectedAvailabilityTimes.includes(option.startTime)}
+                        disabled={!availabilityDate || Boolean(slot)}
+                        onChange={(event) =>
+                          setSelectedAvailabilityTimes((current) =>
+                            event.target.checked
+                              ? [...new Set([...current, option.startTime])]
+                              : current.filter((time) => time !== option.startTime)
+                          )
+                        }
+                        className="h-4 w-4 accent-indigo-600"
+                      />
+                      <span>
+                        <span className="block text-sm font-semibold text-gray-800">{option.label}</span>
+                        {slot && <span className="text-xs text-gray-500">Already booked</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {availabilityError && (
+                <p className="mt-4 flex items-center gap-2 text-sm text-rose-600" role="alert">
+                  <AlertCircle className="h-4 w-4" />
+                  {availabilityError}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveAvailability}
+                disabled={!availabilityDate || savingAvailability}
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingAvailability ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save availability
+              </button>
+            </section>
+
+            <h3 className="mb-4 text-lg font-bold text-gray-900">Upcoming availability and appointments</h3>
             {slots.length === 0 ? (
               <EmptyState
                 icon={CalendarPlus}
-                title="No upcoming slots"
-                message="Available weekday sessions are generated automatically by the current scheduling policy."
+                title="No upcoming availability"
+                message="Select a weekday above and add the times you are available for students to book."
               />
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -884,14 +1317,6 @@ export default function CounselorDashboard() {
                   </button>
                 )}
               </section>
-              <section className="scholar-panel-card rounded-[24px] border border-gray-100 bg-white p-6 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <BookOpen className="h-6 w-6 text-indigo-600" />
-                  <h3 className="text-lg font-black text-gray-900">Course catalogue</h3>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-gray-600">The existing ScholarEx course catalogue is for student learning. Browse it separately; counsellor certification enrolment remains in the professional programme above.</p>
-                <Link to="/courses" className="mt-4 inline-flex rounded-xl border border-indigo-200 px-4 py-2 font-bold text-indigo-700 hover:bg-indigo-50">Browse courses</Link>
-              </section>
             </aside>
           </div>
         )}
@@ -945,6 +1370,16 @@ export default function CounselorDashboard() {
           onSubmit={handleReportSubmit}
           submitting={submittingReport}
           token={token!}
+        />
+      )}
+      {selectedChecklistBooking && token && (
+        <CounselorChecklistModal
+          booking={selectedChecklistBooking}
+          token={token}
+          onClose={() => setSelectedChecklistBooking(null)}
+          onSaved={(answers, completedAt) =>
+            handleChecklistSaved(selectedChecklistBooking.id, answers, completedAt)
+          }
         />
       )}
     </div>
