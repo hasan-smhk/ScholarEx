@@ -72,6 +72,11 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
     const preferredCounselorId =
       typeof req.body.preferredCounselorId === 'string' ? req.body.preferredCounselorId : undefined;
+    const preferredSlotId =
+      typeof req.body.preferredSlotId === 'string' ? req.body.preferredSlotId : undefined;
+    if (req.body.preferredSlotId !== undefined && !preferredSlotId) {
+      return res.status(400).json({ error: 'Choose a valid counseling slot' });
+    }
     const intake = {
       educationBackground: assessment.educationBoard,
       currentStream: assessment.studentClass,
@@ -98,6 +103,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
         .filter(
           (slot) =>
             !excludedSlotIds.has(slot.id) &&
+            (!preferredSlotId || slot.id === preferredSlotId) &&
+            (!preferredCounselorId || slot.counselorId === preferredCounselorId) &&
             isCounselingSlot(slot.date, slot.startTime, slot.endTime) &&
             counselingSlotIsInFuture(slot.date, slot.startTime)
         )
@@ -111,7 +118,11 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
         });
 
       if (!rankedSlots.length) {
-        return res.status(409).json({ error: 'No counseling slots are currently available' });
+        return res.status(409).json({
+          error: preferredSlotId
+            ? 'Your selected slot is no longer available. Please choose another time.'
+            : 'No counseling slots are currently available',
+        });
       }
 
       const slot = rankedSlots[0];

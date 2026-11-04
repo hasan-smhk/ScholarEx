@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { Activity, BookOpenCheck, CalendarClock, CheckCircle2, Clock3, Search, Users } from 'lucide-react';
+import { Activity, BookOpenCheck, CalendarClock, CheckCircle2, Clock3, Search, Save, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import BrandMark from '../components/BrandMark';
+import { COUNSELING_CHECKLIST } from '../data/counselingChecklist';
 import {
 	getAdminOverview,
 	getAdminCounselorCertifications,
@@ -14,6 +15,7 @@ import {
 	reviewAdminBookingCancellation,
 	recordAdminBookingRefund,
 	reviewReport as submitReportReview,
+	updateAdminReportChecklist,
 	updateAdminCounselorFee,
 	updateAdminEnrollmentProgress,
 } from '../services/api';
@@ -94,6 +96,13 @@ interface CounselingReport {
 	id: string;
 	approvalStatus: 'COUNSELOR_REVIEW' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
 	isAiGenerated: boolean;
+	profileScores: {
+		goalClarity: number;
+		academicEngagement: number;
+		studyPlanning: number;
+		learningConfidence: number;
+		careerExploration: number;
+	} | null;
 	createdAt: string;
 	emailSentAt: string | null;
 	reviewNote: string | null;
@@ -104,6 +113,7 @@ interface CounselingReport {
 	booking: {
 		id: string;
 		student: Pick<Student, 'id' | 'name' | 'email'>;
+		sessionChecklistAnswers: Record<string, string> | null;
 		slot: {
 			date: string;
 			startTime: string;
@@ -143,6 +153,8 @@ export default function AdminPanel() {
 	const [progressDrafts, setProgressDrafts] = useState<Record<string, number>>({});
 	const [feeDrafts, setFeeDrafts] = useState<Record<string, number>>({});
 	const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+	const [editingChecklistReportId, setEditingChecklistReportId] = useState('');
+	const [checklistDrafts, setChecklistDrafts] = useState<Record<string, Record<string, string>>>({});
 	const [applicationNotes, setApplicationNotes] = useState<Record<string, string>>({});
 	const [activeSection, setActiveSection] = useState<'students' | 'counselors'>('students');
 	const [loading, setLoading] = useState(true);
@@ -150,6 +162,7 @@ export default function AdminPanel() {
 	const [savingEnrollmentId, setSavingEnrollmentId] = useState('');
 	const [savingCounselorId, setSavingCounselorId] = useState('');
 	const [reviewingReportId, setReviewingReportId] = useState('');
+	const [savingChecklistReportId, setSavingChecklistReportId] = useState('');
 	const [reviewingCertificationId, setReviewingCertificationId] = useState('');
 	const [reviewingApplicationId, setReviewingApplicationId] = useState('');
 	const [resendingApplicationEmailId, setResendingApplicationEmailId] = useState('');
@@ -383,6 +396,64 @@ export default function AdminPanel() {
 		}
 	}
 
+	function startChecklistEdit(report: CounselingReport) {
+		setChecklistDrafts((current) => ({
+			...current,
+			[report.id]: { ...(report.booking.sessionChecklistAnswers || {}) },
+		}));
+		setEditingChecklistReportId(report.id);
+	}
+
+	async function saveChecklist(report: CounselingReport) {
+		if (!token) return;
+		const answers = checklistDrafts[report.id] || {};
+		if (COUNSELING_CHECKLIST.some((section) =>
+			section.questions.some((question) => !answers[question.id]?.trim())
+		)) {
+			setError('Complete every checklist question before saving.');
+			return;
+		}
+
+		setSavingChecklistReportId(report.id);
+		setError('');
+		try {
+			const { data } = await updateAdminReportChecklist(report.id, answers, token);
+			setReports((current) => current.map((item) => item.id === report.id
+				? {
+					...item,
+					approvalStatus: data.report.approvalStatus,
+					emailSentAt: data.report.emailSentAt,
+					reviewNote: data.report.reviewNote,
+					...(data.changed
+						? {
+							strengths: null,
+							areasOfImprovement: null,
+							recommendations: null,
+							nextSteps: null,
+							profileScores: null,
+							isAiGenerated: false,
+						}
+						: {}),
+					booking: { ...item.booking, sessionChecklistAnswers: data.booking.sessionChecklistAnswers },
+				}
+				: item
+			));
+			setEditingChecklistReportId('');
+			setChecklistDrafts((current) => {
+				const next = { ...current };
+				delete next[report.id];
+				return next;
+			});
+			setBookingActionMessage(data.changed
+				? 'Checklist saved. The old report was cleared, and counselor approval has been reset. The counselor must regenerate and approve the report before admin review and student delivery.'
+				: 'Checklist saved. No answers changed, so the existing review status remains.');
+		} catch (err: any) {
+			setError(err.response?.data?.error || 'Could not save checklist answers.');
+		} finally {
+			setSavingChecklistReportId('');
+		}
+	}
+
 	async function handleReportReview(report: CounselingReport, status: 'APPROVED' | 'REJECTED') {
 		if (!token) return;
 		const reviewNote = (reviewNotes[report.id] || '').trim();
@@ -513,6 +584,66 @@ export default function AdminPanel() {
 									>
 										Edit report
 									</button>
+									{report.booking.sessionChecklistAnswers && (
+										<div className="mt-4">
+											{editingChecklistReportId === report.id ? (
+												<div className="space-y-5 rounded-lg border border-teal-200 bg-teal-50/40 p-4">
+													{COUNSELING_CHECKLIST.map((section) => (
+														<fieldset key={section.title} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
+															<legend className="px-2 font-bold text-slate-800">{section.title}</legend>
+															{section.questions.map((question) => (
+																<div key={question.id}>
+																	<label htmlFor={`admin-checklist-${report.id}-${question.id}`} className="mb-1 block text-sm font-semibold text-slate-700">
+																		{question.text}
+																	</label>
+																	<textarea
+																		id={`admin-checklist-${report.id}-${question.id}`}
+																		value={checklistDrafts[report.id]?.[question.id] || ''}
+																		onChange={(event) => setChecklistDrafts((current) => ({
+																			...current,
+																			[report.id]: { ...(current[report.id] || {}), [question.id]: event.target.value },
+																		}))}
+																		maxLength={3000}
+																		rows={2}
+																		className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100"
+																	/>
+																</div>
+															))}
+														</fieldset>
+													))}
+													<p className="text-sm text-amber-800">
+														Saving changed answers clears the old report and resets its approvals. The counselor must regenerate and approve the report before admin review.
+													</p>
+													<div className="flex justify-end gap-2">
+														<button
+															type="button"
+															onClick={() => setEditingChecklistReportId('')}
+															className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+														>
+															<X className="h-4 w-4" /> Cancel
+														</button>
+														<button
+															type="button"
+															onClick={() => saveChecklist(report)}
+															disabled={savingChecklistReportId === report.id}
+															className="inline-flex items-center gap-2 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+														>
+															<Save className="h-4 w-4" />
+															{savingChecklistReportId === report.id ? 'Saving...' : 'Save checklist'}
+														</button>
+													</div>
+												</div>
+											) : (
+												<button
+													type="button"
+													onClick={() => startChecklistEdit(report)}
+													className="rounded-md border border-teal-300 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+												>
+													Edit checklist answers
+												</button>
+											)}
+										</div>
+									)}
 									{report.approvalStatus === 'PENDING_REVIEW' && (
 										<div className="mt-4 space-y-3">
 											<textarea

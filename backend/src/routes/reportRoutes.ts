@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import authMiddleware from '../middlewares/auth.middleware';
 import {
   sendEmail,
@@ -7,11 +7,17 @@ import {
   reportCreatedNotificationEmail,
 } from '../services/email.service';
 import {
+  CounselingReportConfigurationError,
   CounselingReportInputError,
+  CounselingReportProviderError,
   generateCounselingReport,
+  isCounselingReportProfileScores,
 } from '../services/aiCounselingReport.service';
 import { getCounselorProfileIdForUser } from '../services/counselorAccess.service';
-import { isCompleteCounselingChecklist } from '../services/counselingChecklist';
+import {
+  COUNSELING_CHECKLIST_QUESTION_IDS,
+  isCompleteCounselingChecklist,
+} from '../services/counselingChecklist';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -53,6 +59,10 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
     ) {
       return res.status(400).json({ error: 'Booking ID and all report sections are required' });
     }
+    if (req.body.profileScores !== undefined && !isCounselingReportProfileScores(req.body.profileScores)) {
+      return res.status(400).json({ error: 'AI report reflection scores are invalid' });
+    }
+    const profileScores = req.body.profileScores as Prisma.InputJsonValue | undefined;
 
     // Verify booking exists
     const booking = await prisma.booking.findUnique({
@@ -109,6 +119,7 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
           areasOfImprovement,
           recommendations,
           nextSteps,
+          profileScores,
           approvalStatus: role === 'COUNSELOR'
             ? 'COUNSELOR_REVIEW'
             : existingReport.approvalStatus === 'COUNSELOR_REVIEW'
@@ -134,6 +145,7 @@ router.post('/', authMiddleware, counselorOrAdmin, async (req: Request, res: Res
           areasOfImprovement,
           recommendations,
           nextSteps,
+          profileScores,
           isAiGenerated: req.body.isAiGenerated === true,
           approvalStatus: 'COUNSELOR_REVIEW',
         },
@@ -213,10 +225,92 @@ router.post('/:bookingId/generate', authMiddleware, counselorOrAdmin, async (req
     const status =
       error instanceof CounselingReportInputError
         ? 400
-        : message.includes('not configured')
+        : error instanceof CounselingReportConfigurationError
           ? 503
-          : 502;
+          : error instanceof CounselingReportProviderError
+            ? 502
+            : 500;
     res.status(status).json({ error: message });
+  }
+});
+
+router.put('/:reportId/checklist', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { role } = (req as any).user;
+    if (role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { answers } = req.body;
+    if (!isCompleteCounselingChecklist(answers) || JSON.stringify(answers).length > 50000) {
+      return res.status(400).json({
+        error: 'Answer every checklist question with no more than 3,000 characters per answer',
+      });
+    }
+
+    const report = await prisma.report.findUnique({
+      where: { id: req.params.reportId },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            sessionChecklistAnswers: true,
+          },
+        },
+      },
+    });
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    const previousAnswers =
+      report.booking.sessionChecklistAnswers && typeof report.booking.sessionChecklistAnswers === 'object'
+        ? report.booking.sessionChecklistAnswers as Record<string, unknown>
+        : {};
+    const changed = COUNSELING_CHECKLIST_QUESTION_IDS.some((id) => previousAnswers[id] !== answers[id]);
+
+    const result = await prisma.$transaction(async (transaction) => {
+      const booking = await transaction.booking.update({
+        where: { id: report.booking.id },
+        data: {
+          sessionChecklistAnswers: answers as Prisma.InputJsonValue,
+          sessionChecklistCompletedAt: new Date(),
+        },
+        select: { sessionChecklistAnswers: true, sessionChecklistCompletedAt: true },
+      });
+
+      const updatedReport = changed
+        ? await transaction.report.update({
+            where: { id: report.id },
+            data: {
+              strengths: null,
+              areasOfImprovement: null,
+              recommendations: null,
+              nextSteps: null,
+              profileScores: Prisma.DbNull,
+              isAiGenerated: false,
+              approvalStatus: 'COUNSELOR_REVIEW',
+              counselorReviewedAt: null,
+              counselorReviewedById: null,
+              reviewedAt: null,
+              reviewedById: null,
+              reviewNote: null,
+              emailSentAt: null,
+            },
+            select: { id: true, approvalStatus: true, emailSentAt: true, reviewNote: true },
+          })
+        : {
+            id: report.id,
+            approvalStatus: report.approvalStatus,
+            emailSentAt: report.emailSentAt,
+            reviewNote: report.reviewNote,
+          };
+
+      return { booking, report: updatedReport };
+    });
+
+    return res.json({ ...result, changed });
+  } catch (error) {
+    console.error('Admin counseling checklist update failed:', error);
+    return res.status(500).json({ error: 'Failed to update checklist answers' });
   }
 });
 
@@ -513,6 +607,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
           select: {
             id: true,
             student: { select: { id: true, name: true, email: true } },
+            sessionChecklistAnswers: true,
             slot: {
               select: {
                 date: true,

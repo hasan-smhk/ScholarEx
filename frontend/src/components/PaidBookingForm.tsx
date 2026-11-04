@@ -3,12 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar, CreditCard, Loader2, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { createBooking } from '../services/api';
+import { formatSlotDate } from '../utils/slotDate';
 
 interface Counselor {
   id: string;
   name: string;
   specialization: string;
   sessionFee?: number;
+  slots: Array<{
+    id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  }>;
 }
 
 interface Props {
@@ -21,16 +28,35 @@ export default function PaidBookingForm({ counselor, onClose }: Props) {
   const { token } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [preferredSlotId, setPreferredSlotId] = useState('');
   const submitInProgress = useRef(false);
+
+  const availableSlots = counselor.slots
+    .slice()
+    .sort((left, right) =>
+      left.date.localeCompare(right.date) || left.startTime.localeCompare(right.startTime)
+    );
+
+  const formatTime = (value: string) => {
+    const [hour, minute] = value.split(':').map(Number);
+    return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`;
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token || submitInProgress.current) return;
+    if (!preferredSlotId) {
+      setError('Choose your preferred session time to continue.');
+      return;
+    }
     submitInProgress.current = true;
     setSubmitting(true);
     setError('');
     try {
-      const { data } = await createBooking({ preferredCounselorId: counselor.id }, token);
+      const { data } = await createBooking({
+        preferredCounselorId: counselor.id,
+        preferredSlotId,
+      }, token);
       onClose();
       navigate(`/booking/${data.id}`);
     } catch (requestError: any) {
@@ -61,11 +87,33 @@ export default function PaidBookingForm({ counselor, onClose }: Props) {
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-amber-700"><Calendar className="h-5 w-5" /></span>
           <div>
             <p className="text-xs text-slate-500">Available counseling hours</p>
-            <p className="font-bold text-slate-900">Monday–Friday, 5:00 PM–8:00 PM IST</p>
-            <p className="text-xs text-slate-600">The earliest suitable open slot will be reserved for payment.</p>
+            <p className="font-bold text-slate-900">Monday–Friday, 2:00 PM–8:00 PM IST</p>
+            <p className="text-xs text-slate-600">Choose a time from this counselor's available slots.</p>
           </div>
         </div>
       </div>
+
+      <label className="block text-sm font-semibold text-slate-700">
+        Preferred session time
+        <select
+          required
+          value={preferredSlotId}
+          onChange={(event) => setPreferredSlotId(event.target.value)}
+          className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"
+        >
+          <option value="">Select an available date and time</option>
+          {availableSlots.map((slot) => (
+            <option key={slot.id} value={slot.id}>
+              {formatSlotDate(slot.date, 'en-IN', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })} · {formatTime(slot.startTime)}–{formatTime(slot.endTime)}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
         <div className="flex items-start gap-3">
@@ -86,11 +134,16 @@ export default function PaidBookingForm({ counselor, onClose }: Props) {
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={submitting || availableSlots.length === 0}
         className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-700 px-5 py-4 font-bold text-white hover:bg-indigo-800 disabled:cursor-wait disabled:opacity-60"
       >
-        {submitting ? <><Loader2 className="h-5 w-5 animate-spin" /> Reserving a slot…</> : 'Continue to payment'}
+        {submitting ? <><Loader2 className="h-5 w-5 animate-spin" /> Reserving your slot…</> : 'Continue to payment'}
       </button>
+      {availableSlots.length === 0 && (
+        <p className="text-sm text-amber-800" role="status">
+          This counselor has no available slots right now. Please choose another counselor or check back later.
+        </p>
+      )}
     </form>
   );
 }

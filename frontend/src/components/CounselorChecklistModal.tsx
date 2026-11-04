@@ -13,7 +13,7 @@ interface CounselorChecklistModalProps {
   };
   token: string;
   onClose: () => void;
-  onSaved: (answers: Record<string, string>, completedAt: string) => void;
+  onSaved: (answers: Record<string, string>, completedAt: string) => Promise<void>;
 }
 
 export default function CounselorChecklistModal({
@@ -41,9 +41,13 @@ export default function CounselorChecklistModal({
     try {
       setSaving(true);
       const { data } = await saveCounselingSessionChecklist(booking.id, answers, token);
-      onSaved(data.sessionChecklistAnswers, data.sessionChecklistCompletedAt);
+      await onSaved(data.sessionChecklistAnswers, data.sessionChecklistCompletedAt);
     } catch (requestError: any) {
-      setError(requestError.response?.data?.error || 'Could not save the session checklist.');
+      setError(
+        requestError.response?.data?.error ||
+        requestError.message ||
+        'Could not save the checklist and generate the AI report.'
+      );
     } finally {
       setSaving(false);
     }
@@ -104,7 +108,7 @@ export default function CounselorChecklistModal({
             </button>
             <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-5 py-3 font-bold text-white hover:bg-teal-800 disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? 'Saving...' : 'Save checklist'}
+              {saving ? 'Saving and generating report...' : 'Save checklist and generate report'}
             </button>
           </div>
         </form>

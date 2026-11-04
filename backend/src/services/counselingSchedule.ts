@@ -3,6 +3,9 @@ import { PrismaClient } from '@prisma/client';
 export const COUNSELING_RESERVATION_MINUTES = 60;
 
 export const COUNSELING_SLOTS = [
+  { startTime: '14:00', endTime: '15:00' },
+  { startTime: '15:00', endTime: '16:00' },
+  { startTime: '16:00', endTime: '17:00' },
   { startTime: '17:00', endTime: '18:00' },
   { startTime: '18:00', endTime: '19:00' },
   { startTime: '19:00', endTime: '20:00' },

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE = '/api';
 const api = axios.create({ baseURL: API_BASE });
 
 // Auth
@@ -311,6 +311,17 @@ export const getAdminReports = (token: string) =>
   api.get('/reports', {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+export const updateAdminReportChecklist = (
+  reportId: string,
+  answers: Record<string, string>,
+  token: string
+) =>
+  api.put(
+    `/reports/${reportId}/checklist`,
+    { answers },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
 
 export const reviewReport = (
   reportId: string,

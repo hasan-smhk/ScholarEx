@@ -14,6 +14,35 @@ Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
 The page will reload if you make edits.\
 You will also see any lint errors in the console.
 
+## Sharing a demo
+
+The frontend sends API requests to the same origin under `/api`. While running
+with `npm start`, the development server forwards those requests to the backend
+at `http://localhost:4000`.
+
+1. Start the backend in one terminal:
+
+   ```sh
+   cd backend
+   npm run dev
+   ```
+
+2. Start the frontend in another terminal:
+
+   ```sh
+   cd frontend
+   npm start
+   ```
+
+3. Use your preferred tunnel to expose only `http://localhost:3000`, then share
+   the tunnel's public URL. Keep port `4000` private; frontend API requests
+   will be forwarded to the backend by the development server.
+
+This proxy is for local demos using the development server. Production hosting
+must separately route `/api` requests to the backend. Set `FRONTEND_URL` in
+`backend/.env` to the public frontend URL if password-reset links should use
+the shared demo address.
+
 ### `npm test`
 
 Launches the test runner in the interactive watch mode.\

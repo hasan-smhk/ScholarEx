@@ -39,15 +39,22 @@ report records.
 The report-review, counselor-fee, and session-checklist migrations are applied
 by the setup commands above. After payment is confirmed, the counselor adds a
 session link, which is emailed to the student's registered address. When the
-session starts, the counselor can record the student's answers in the four
-sections of the counselor checklist in the dashboard. The checklist contains
-the 30 questions from the counseling form.
+link has been emailed, the counselor checklist is available in the counselor
+dashboard at any time before, during, or after the session. Counselors can
+record or update the student's answers in its four sections. The checklist
+contains the 30 questions from the counseling form.
 
-The counselor generates, edits, and approves the AI report first. Selected
-academic and career responses are sent to the configured AI provider; family,
-relationship, and emotional-wellbeing answers remain in ScholarEx and are
-excluded from AI generation. The administrator can edit the report and must
-approve it before it is released.
+Saving a completed checklist automatically generates an AI report from its
+answers and sends the counselor to review it. The AI synthesizes answers into
+point-wise observations, improvement areas, recommendations, and next steps,
+plus a visual five-dimension counseling profile. The profile is a reflective
+aid, not a standardized assessment. The counselor can edit and approve the
+report first. Selected academic and career responses are sent to the configured
+AI provider; family, relationship, and emotional-wellbeing answers remain in
+ScholarEx and are excluded from AI generation. If the AI provider is
+unconfigured or unavailable, report generation fails with an explicit error
+rather than substituting a non-AI draft. The administrator can edit the report
+and must approve it before it is released.
 Students can access and receive the report by email only after administrator
 approval. If delivery fails, an administrator can retry it from the report
 review panel.
@@ -169,10 +176,11 @@ enrol in the optional ScholarEx counsellor certification programme or continue
 without enrolment.
 
 Approved counsellors manage their own bookable availability in the dashboard.
-They can add or remove one-hour weekday sessions between 5:00 PM and 8:00 PM
+They can add or remove one-hour weekday sessions between 2:00 PM and 8:00 PM
 India Standard Time (IST);
-changes are reflected in student booking, and booking requests can reserve only
-an active, unbooked slot. Removing an availability time preserves the slot and
+changes are reflected in student booking, where students choose a preferred
+available slot before continuing to payment. Booking requests can reserve only
+the selected active, unbooked slot. Removing an availability time preserves the slot and
 any related appointment history. The `20261028184100_manual_counselor_availability`
 migration disables legacy auto-generated slots and retires the pre-seeded
 `Syed Baqar` profile without deleting its appointment records. Counselors must

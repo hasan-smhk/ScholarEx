@@ -138,6 +138,9 @@ interface Slot {
 }
 
 const COUNSELING_TIME_OPTIONS = [
+  { startTime: '14:00', endTime: '15:00', label: '2:00 PM – 3:00 PM' },
+  { startTime: '15:00', endTime: '16:00', label: '3:00 PM – 4:00 PM' },
+  { startTime: '16:00', endTime: '17:00', label: '4:00 PM – 5:00 PM' },
   { startTime: '17:00', endTime: '18:00', label: '5:00 PM – 6:00 PM' },
   { startTime: '18:00', endTime: '19:00', label: '6:00 PM – 7:00 PM' },
   { startTime: '19:00', endTime: '20:00', label: '7:00 PM – 8:00 PM' },
@@ -149,10 +152,12 @@ function hasSessionEnded(booking: Booking): boolean {
   return sessionEnd.getTime() < Date.now();
 }
 
-function hasSessionStarted(booking: Booking): boolean {
-  const date = booking.slot.date.slice(0, 10);
-  const sessionStart = new Date(`${date}T${booking.slot.startTime}:00+05:30`);
-  return sessionStart.getTime() <= Date.now();
+function canOpenCounselorChecklist(booking: Booking): boolean {
+  return (
+    !booking.cancelledAt &&
+    (booking.isFreeSession || booking.paymentStatus === 'PAID') &&
+    Boolean(booking.meetingLink && booking.meetingLinkEmailSentAt)
+  );
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
@@ -267,7 +272,7 @@ const ReportModal = ({
         {/* Body */}
         <div className="p-6 space-y-5">
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
-            <p className="mb-3 text-sm text-violet-900">Selected academic and career responses are sent to your configured AI provider. Family, relationship, and emotional-wellbeing answers remain in ScholarEx and are excluded from AI generation. Review and edit the draft before counselor approval, administrator review, and delivery to the student.</p>
+            <p className="mb-3 text-sm text-violet-900">The AI synthesizes selected academic and career responses into point-wise observations, recommendations, and a visual counseling profile. Family, relationship, and emotional-wellbeing answers stay in ScholarEx and are excluded. Review and edit the draft before counselor approval, administrator review, and delivery to the student.</p>
             <button
               onClick={handleGenerate}
               disabled={generating || submitting}
@@ -561,7 +566,7 @@ export default function CounselorDashboard() {
     }
   };
 
-  const handleChecklistSaved = (bookingId: string, answers: Record<string, string>, completedAt: string) => {
+  const handleChecklistSaved = async (bookingId: string, answers: Record<string, string>, completedAt: string) => {
     setBookings((current) => current.map((booking) =>
       booking.id === bookingId
         ? {
@@ -571,7 +576,24 @@ export default function CounselorDashboard() {
           }
         : booking
     ));
+    if (!token) {
+      throw new Error('Checklist saved, but your session expired before report generation. Sign in again and retry.');
+    }
+
+    try {
+      const { data: draft } = await generateReportDraft(bookingId, token);
+      await uploadReport(bookingId, { ...draft, isAiGenerated: true }, token);
+    } catch (error: any) {
+      throw new Error(
+        `Checklist saved, but the AI report could not be generated or saved: ${
+          error.response?.data?.error || error.message || 'Please try saving again.'
+        }`
+      );
+    }
+
     setSelectedChecklistBooking(null);
+    await fetchAll();
+    navigate(`/booking/${bookingId}/report`);
   };
 
   // ── Computed Stats ──────────────────────────────────────────────────────────
@@ -590,6 +612,9 @@ export default function CounselorDashboard() {
   const completedSessions = bookings.filter((b) => b.report);
   const eligibleMeetingBookings = bookings.filter(
     (booking) => !booking.cancelledAt
+  );
+  const activeChecklistBookings = bookings.filter((booking) =>
+    canOpenCounselorChecklist(booking)
   );
 
   if (loading) {
@@ -714,6 +739,7 @@ export default function CounselorDashboard() {
             TAB: OVERVIEW
         ════════════════════════════════════════════════════════════════ */}
         {activeTab === 'overview' && (
+          <>
           <div className="grid lg:grid-cols-2 gap-8">
             {/* Today's Schedule */}
             <div>
@@ -791,6 +817,35 @@ export default function CounselorDashboard() {
               )}
             </div>
           </div>
+          <section className="mt-8">
+            <h2 className="mb-4 text-2xl font-black text-gray-900">Session checklist</h2>
+            {activeChecklistBookings.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                Checklists are available here for confirmed sessions after the meeting link has been emailed. You can fill them out before, during, or after the session.
+              </p>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {activeChecklistBookings.map((booking) => (
+                  <div key={booking.id} className="scholar-panel-card flex items-center justify-between gap-4 rounded-2xl border border-teal-100 bg-white p-5 shadow-sm">
+                    <div>
+                      <p className="font-bold text-gray-900">{booking.student.name}</p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {formatSlotDate(booking.slot.date, 'en-IN')} · {booking.slot.startTime}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChecklistBooking(booking)}
+                      className="shrink-0 rounded-xl bg-teal-700 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-teal-800"
+                    >
+                      {booking.sessionChecklistCompletedAt ? 'Review / edit checklist' : 'Open checklist'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          </>
         )}
 
         {/* ═════════════════════════════════════════════════════════════════
@@ -892,33 +947,52 @@ export default function CounselorDashboard() {
                             </a>
                           ) : null}
                           {!b.cancelledAt && b.sessionChecklistCompletedAt && !b.report ? (
-                            <button
-                              onClick={() => setSelectedBooking(b)}
-                              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-2xl transition-colors flex items-center justify-center gap-2"
-                            >
-                              <Sparkles className="w-4 h-4" />
-                              Prepare AI Report
-                            </button>
+                            <div className="space-y-2">
+                              <button
+                                onClick={() => setSelectedBooking(b)}
+                                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-2xl transition-colors flex items-center justify-center gap-2"
+                              >
+                                <Sparkles className="w-4 h-4" />
+                                Prepare AI Report
+                              </button>
+                              {canOpenCounselorChecklist(b) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedChecklistBooking(b)}
+                                  className="w-full rounded-2xl border border-teal-200 py-3 font-bold text-teal-800 transition-colors hover:bg-teal-50"
+                                >
+                                  Review / edit checklist
+                                </button>
+                              )}
+                            </div>
                           ) : !b.cancelledAt && b.report ? (
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/booking/${b.id}/report`)}
-                              className="flex w-full items-center justify-center gap-2 py-3 font-bold text-emerald-700 hover:text-emerald-800"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                              {b.report.approvalStatus === 'APPROVED'
-                                ? 'Report approved'
-                                : b.report.approvalStatus === 'REJECTED'
-                                  ? 'Changes requested'
-                                  : b.report.approvalStatus === 'COUNSELOR_REVIEW'
-                                    ? 'Review and approve report'
-                                    : 'Awaiting admin review'}
-                            </button>
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/booking/${b.id}/report`)}
+                                className="flex w-full items-center justify-center gap-2 py-3 font-bold text-emerald-700 hover:text-emerald-800"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                {b.report.approvalStatus === 'APPROVED'
+                                  ? 'Report approved'
+                                  : b.report.approvalStatus === 'REJECTED'
+                                    ? 'Changes requested'
+                                    : b.report.approvalStatus === 'COUNSELOR_REVIEW'
+                                      ? 'Review and approve report'
+                                      : 'Awaiting admin review'}
+                              </button>
+                              {canOpenCounselorChecklist(b) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedChecklistBooking(b)}
+                                  className="w-full rounded-2xl border border-teal-200 py-3 font-bold text-teal-800 transition-colors hover:bg-teal-50"
+                                >
+                                  Review / edit checklist
+                                </button>
+                              )}
+                            </div>
                           ) : !b.cancelledAt && !b.sessionChecklistCompletedAt &&
-                            hasSessionStarted(b) &&
-                            (b.isFreeSession || b.paymentStatus === 'PAID') &&
-                            b.meetingLink &&
-                            b.meetingLinkEmailSentAt ? (
+                            canOpenCounselorChecklist(b) ? (
                             <button
                               type="button"
                               onClick={() => setSelectedChecklistBooking(b)}
@@ -1111,6 +1185,19 @@ export default function CounselorDashboard() {
                         <p className="text-xs text-emerald-700">Meeting link emailed to the student.</p>
                       )}
                     </div>
+                    {canOpenCounselorChecklist(booking) ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedChecklistBooking(booking)}
+                        className="mt-4 w-full rounded-xl bg-teal-700 py-3 font-bold text-white transition-colors hover:bg-teal-800"
+                      >
+                        {booking.sessionChecklistCompletedAt ? 'Review / edit checklist' : 'Open counselor checklist'}
+                      </button>
+                    ) : !booking.cancelledAt ? (
+                      <p className="mt-4 text-center text-xs text-gray-500">
+                        Checklist available after payment is confirmed and the session link is emailed.
+                      </p>
+                    ) : null}
                   </section>
                 ))}
               </div>
@@ -1125,7 +1212,7 @@ export default function CounselorDashboard() {
           <div>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-gray-900">My Availability</h2>
-              <p className="text-sm text-gray-500">Weekdays · 5:00 PM–8:00 PM IST</p>
+              <p className="text-sm text-gray-500">Weekdays · 2:00 PM–8:00 PM IST</p>
             </div>
 
             <section className="mb-8 rounded-[20px] border border-gray-100 bg-white p-6 shadow-sm">
@@ -1143,7 +1230,7 @@ export default function CounselorDashboard() {
                   className="mt-2 block w-full rounded-xl border border-gray-200 px-4 py-3"
                 />
               </label>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 {COUNSELING_TIME_OPTIONS.map((option) => {
                   const slot = slots.find((candidate) =>
                     availabilityDate &&

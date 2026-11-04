@@ -250,7 +250,6 @@ router.put('/me/bookings/:bookingId/checklist', authMiddleware, counselorOnly, a
         paymentStatus: true,
         meetingLink: true,
         meetingLinkEmailSentAt: true,
-        slot: { select: { date: true, startTime: true } },
       },
     });
     if (!booking) return res.status(404).json({ error: 'Assigned appointment not found' });
@@ -263,10 +262,6 @@ router.put('/me/bookings/:bookingId/checklist', authMiddleware, counselorOnly, a
     if (!booking.meetingLink || !booking.meetingLinkEmailSentAt) {
       return res.status(409).json({ error: 'The session link must be sent to the student before recording answers' });
     }
-    if (counselingSlotIsInFuture(booking.slot.date, booking.slot.startTime)) {
-      return res.status(409).json({ error: 'The counselor checklist is available when the session starts' });
-    }
-
     const updated = await prisma.booking.update({
       where: { id: booking.id },
       data: {
@@ -379,7 +374,7 @@ router.put('/me/availability', authMiddleware, counselorOnly, async (req: Reques
     }
     const allowedStartTimes = new Set(COUNSELING_SLOTS.map((slot) => slot.startTime));
     if (startTimes.some((time) => typeof time !== 'string' || !allowedStartTimes.has(time))) {
-      return res.status(400).json({ error: 'Availability must be between 5:00 PM and 8:00 PM' });
+      return res.status(400).json({ error: 'Availability must be between 2:00 PM and 8:00 PM' });
     }
     const selectedTimes = [...new Set(startTimes as string[])];
     if (selectedTimes.some((time) => !counselingSlotIsInFuture(date, time))) {

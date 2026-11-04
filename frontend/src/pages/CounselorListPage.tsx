@@ -178,7 +178,7 @@ export default function CounselorListPage() {
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-teal-200">Your counselor</p>
             <h2 className="mt-1 text-2xl font-black text-white sm:text-3xl">Career guidance, made personal</h2>
           </div>
-          <p className="text-sm text-slate-300">Weekdays · 5:00 PM–8:00 PM IST</p>
+          <p className="text-sm text-slate-300">Weekdays · 2:00 PM–8:00 PM IST</p>
         </div>
         {counselors.length === 0 ? (
           <div className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white p-12 text-center shadow-2xl">

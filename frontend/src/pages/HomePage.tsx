@@ -117,7 +117,7 @@ const AchievementBanner: React.FC = () => {
     <section className="bg-gradient-to-r from-[#0f766e] via-[#0e7490] to-[#115e59] py-8 sm:py-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <p className="text-center text-white/80 uppercase tracking-widest text-xs sm:text-sm font-bold mb-6">
-          Trusted by Students Across Karnataka
+          Trusted by Students Across the World.
         </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-5 sm:gap-8">
           {stats.map((stat) => (

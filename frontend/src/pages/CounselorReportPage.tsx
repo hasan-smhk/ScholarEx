@@ -36,11 +36,56 @@ interface Report {
   areasOfImprovement: string;
   recommendations: string;
   nextSteps: string;
+  profileScores: CounselingReportProfileScores | null;
   createdAt: string;
   updatedAt: string;
   approvalStatus: 'COUNSELOR_REVIEW' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
   isAiGenerated: boolean;
   reviewNote: string | null;
+}
+
+interface CounselingReportProfileScores {
+  goalClarity: number;
+  academicEngagement: number;
+  studyPlanning: number;
+  learningConfidence: number;
+  careerExploration: number;
+}
+
+const PROFILE_SCORE_LABELS: Array<{
+  key: keyof CounselingReportProfileScores;
+  label: string;
+}> = [
+  { key: 'goalClarity', label: 'Goal clarity' },
+  { key: 'academicEngagement', label: 'Academic engagement' },
+  { key: 'studyPlanning', label: 'Study planning' },
+  { key: 'learningConfidence', label: 'Learning confidence' },
+  { key: 'careerExploration', label: 'Career exploration' },
+];
+
+function CounselingProfileChart({ scores }: { scores: CounselingReportProfileScores }) {
+  return (
+    <section className="mb-8 rounded-xl border border-indigo-100 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-bold text-gray-900">Counseling profile</h2>
+      <p className="mt-1 text-sm text-gray-600">
+        AI-assisted reflection from academic and career answers (1 = needs discussion, 5 = clear evidence). This is not a standardized or clinical assessment.
+      </p>
+      <div className="mt-5 space-y-4" role="img" aria-label="AI-assisted counseling profile scores from one to five">
+        {PROFILE_SCORE_LABELS.map(({ key, label }) => (
+          <div key={key} className="grid grid-cols-[9rem_1fr_2rem] items-center gap-3">
+            <span className="text-sm font-semibold text-slate-700">{label}</span>
+            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-teal-500 to-indigo-600"
+                style={{ width: `${(scores[key] / 5) * 100}%` }}
+              />
+            </div>
+            <span className="text-right text-sm font-bold text-indigo-800">{scores[key]}/5</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 const escapeHtml = (value: string) =>
@@ -69,6 +114,7 @@ const CounselorReportPage: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
+  const [profileScores, setProfileScores] = useState<CounselingReportProfileScores | null>(null);
   const isCounselor = user?.role === 'COUNSELOR' || user?.role === 'ADMIN';
 
   const [notification, setNotification] = useState<{
@@ -110,6 +156,7 @@ const CounselorReportPage: React.FC = () => {
         const reportRes = await getReportByBooking(bookingId, token);
         setReport(reportRes.data);
         setIsAiGenerated(reportRes.data.isAiGenerated);
+        setProfileScores(reportRes.data.profileScores || null);
         setIsEditing(isCounselor && reportRes.data.approvalStatus === 'REJECTED');
         setFormData({
           strengths: reportRes.data.strengths || '',
@@ -123,6 +170,7 @@ const CounselorReportPage: React.FC = () => {
         }
         setReport(null);
         setIsAiGenerated(false);
+        setProfileScores(null);
         setIsEditing(user?.role === 'COUNSELOR');
         setFormData({
           strengths: '',
@@ -145,11 +193,12 @@ const CounselorReportPage: React.FC = () => {
       setGenerating(true);
       const { data } = await generateReportDraft(bookingId, token);
       setFormData(data);
+      setProfileScores(data.profileScores);
       setIsAiGenerated(true);
       setNotification({
         show: true,
         type: 'success',
-        message: 'AI draft generated from relevant academic and counselling details. Review it before submitting.',
+        message: 'AI synthesized the checklist into a point-wise report and counseling profile. Review it before submitting.',
       });
     } catch (err: any) {
       setNotification({
@@ -180,10 +229,12 @@ const CounselorReportPage: React.FC = () => {
           bookingId,
           ...formData,
           isAiGenerated,
+          ...(profileScores ? { profileScores } : {}),
         },
         token
       );
       setReport(response.data.report);
+      setProfileScores(response.data.report.profileScores || profileScores);
       setIsEditing(false);
       setNotification({
         show: true,
@@ -228,6 +279,20 @@ const CounselorReportPage: React.FC = () => {
 
   const handleDownloadPDF = () => {
     if (!booking || !report) return;
+    const reportProfileScores = report.profileScores;
+    const profileChart = reportProfileScores
+      ? `
+        <h2>Counseling profile</h2>
+        <p>AI-assisted reflection from academic and career answers (1 = needs discussion, 5 = clear evidence). Not a standardized or clinical assessment.</p>
+        ${PROFILE_SCORE_LABELS.map(({ key, label }) => `
+          <div class="score-row">
+            <span>${escapeHtml(label)}</span>
+            <div class="bar"><div style="width:${(reportProfileScores[key] / 5) * 100}%"></div></div>
+            <strong>${reportProfileScores[key]}/5</strong>
+          </div>
+        `).join('')}
+      `
+      : '';
 
     const htmlContent = `<!DOCTYPE html>
 <html>
@@ -244,6 +309,9 @@ const CounselorReportPage: React.FC = () => {
   table { width: 100%; border-collapse: collapse; margin: 15px 0; }
   td { padding: 10px; border-bottom: 1px solid #ddd; }
   .bold { font-weight: bold; }
+  .score-row { display: grid; grid-template-columns: 180px 1fr 40px; align-items: center; gap: 12px; margin: 12px 0; }
+  .bar { height: 12px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+  .bar div { height: 100%; background: linear-gradient(90deg, #14b8a6, #4f46e5); }
 </style>
 </head>
 <body>
@@ -271,11 +339,12 @@ const CounselorReportPage: React.FC = () => {
     </table>
 
     <h2>Counselor Assessment</h2>
+    ${profileChart}
 
-    <div class="section"><div class="label">💪 Student Strengths</div><p>${escapeHtml(report.strengths || 'N/A')}</p></div>
-    <div class="section"><div class="label">🎯 Areas for Improvement</div><p>${escapeHtml(report.areasOfImprovement || 'N/A')}</p></div>
-    <div class="section"><div class="label">💡 Recommendations</div><p>${escapeHtml(report.recommendations || 'N/A')}</p></div>
-    <div class="section"><div class="label">📈 Next Steps</div><p>${escapeHtml(report.nextSteps || 'N/A')}</p></div>
+    <div class="section"><div class="label">💪 Student Strengths</div><p style="white-space:pre-wrap">${escapeHtml(report.strengths || 'N/A')}</p></div>
+    <div class="section"><div class="label">🎯 Areas for Improvement</div><p style="white-space:pre-wrap">${escapeHtml(report.areasOfImprovement || 'N/A')}</p></div>
+    <div class="section"><div class="label">💡 Recommendations</div><p style="white-space:pre-wrap">${escapeHtml(report.recommendations || 'N/A')}</p></div>
+    <div class="section"><div class="label">📈 Next Steps</div><p style="white-space:pre-wrap">${escapeHtml(report.nextSteps || 'N/A')}</p></div>
 
     <div class="footer"><p>Generated on ${new Date().toLocaleString()}</p><p>© ${new Date().getFullYear()} ScholarEx. All rights reserved.</p></div>
   </div>
@@ -394,6 +463,8 @@ const CounselorReportPage: React.FC = () => {
           </section>
         )}
 
+        {profileScores && <CounselingProfileChart scores={profileScores} />}
+
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -412,7 +483,7 @@ const CounselorReportPage: React.FC = () => {
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm text-violet-900">
-                    Selected academic and career responses are sent to your configured AI provider. Family, relationship, and emotional-wellbeing answers remain in ScholarEx and are excluded from AI generation. Review and edit the generated report before approval.
+                    AI synthesizes selected academic and career responses into point-wise observations and recommendations. Family, relationship, and emotional-wellbeing answers remain in ScholarEx and are excluded from AI generation. The visual profile is a reflection aid, not a standardized assessment.
                   </p>
                   {user?.role === 'COUNSELOR' && (
                     <button
@@ -426,7 +497,7 @@ const CounselorReportPage: React.FC = () => {
                     </button>
                   )}
                 </div>
-                {isAiGenerated && <p className="mt-2 text-xs font-semibold text-violet-800">AI-generated draft — review and edit before submission.</p>}
+                {isAiGenerated && <p className="mt-2 text-xs font-semibold text-violet-800">AI-generated synthesis — review and edit before submission.</p>}
                 {user?.role === 'ADMIN' && (
                   <p className="mt-2 text-xs font-semibold text-violet-900">
                     Edit the report without bypassing the counselor or administrator approval stages.
@@ -459,7 +530,7 @@ const CounselorReportPage: React.FC = () => {
                 <button type="submit" disabled={submitting || generating} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">
                   {submitting ? (<><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>) : (<><Save className="w-4 h-4" /> {user?.role === 'ADMIN' ? 'Save for admin approval' : 'Save Changes'}</>)}
                 </button>
-                <button type="button" onClick={() => { setIsEditing(false); if (report) { setFormData({ strengths: report.strengths, areasOfImprovement: report.areasOfImprovement, recommendations: report.recommendations, nextSteps: report.nextSteps }); } }} className="px-6 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">Cancel</button>
+                <button type="button" onClick={() => { setIsEditing(false); if (report) { setFormData({ strengths: report.strengths, areasOfImprovement: report.areasOfImprovement, recommendations: report.recommendations, nextSteps: report.nextSteps }); setProfileScores(report.profileScores || null); } }} className="px-6 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">Cancel</button>
               </div>
             )}
           </form>
