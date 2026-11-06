@@ -10,6 +10,7 @@ interface Counselor {
   name: string;
   specialization: string;
   sessionFee?: number;
+  serviceFee?: number;
   slots: Array<{
     id: string;
     date: string;
@@ -121,12 +122,16 @@ export default function PaidBookingForm({ counselor, onClose }: Props) {
           <div>
             <h3 className="font-bold text-indigo-950">Payment is required to confirm</h3>
             <p className="mt-1 text-sm leading-6 text-indigo-900">
-              Your student report details will be shared with the counselor. Review the session fee and complete payment on the next screen. Your meeting link will be emailed after payment is confirmed.
+              Your student report details will be shared with the counselor. Review the fee breakdown and complete payment on the next screen. Your meeting link will be emailed after payment is confirmed.
             </p>
             {typeof counselor.sessionFee === 'number' && (
-              <p className="mt-2 text-sm font-black text-indigo-950">
-                Session fee: ₹{counselor.sessionFee.toLocaleString('en-IN')}
-              </p>
+              <div className="mt-2 space-y-1 text-sm text-indigo-950">
+                <p>Session fee: ₹{counselor.sessionFee.toLocaleString('en-IN')}</p>
+                <p>Service fee: ₹{(counselor.serviceFee ?? 0).toLocaleString('en-IN')}</p>
+                <p className="font-black">
+                  Total: ₹{(counselor.sessionFee + (counselor.serviceFee ?? 0)).toLocaleString('en-IN')}
+                </p>
+              </div>
             )}
           </div>
         </div>

@@ -7,6 +7,7 @@ import {
   sendEmail,
 } from '../services/email.service';
 import { counselingSlotIsInFuture } from '../services/counselingSchedule';
+import { MIN_COUNSELOR_SESSION_FEE } from '../services/counselingPricing';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -203,8 +204,12 @@ router.patch('/bookings/:id/refund', authMiddleware, adminMiddleware, async (req
 router.patch('/counselors/:id/session-fee', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   try {
     const { sessionFee } = req.body;
-    if (typeof sessionFee !== 'number' || !Number.isFinite(sessionFee) || sessionFee < 1) {
-      return res.status(400).json({ error: 'Session fee must be a positive number' });
+    if (
+      typeof sessionFee !== 'number' ||
+      !Number.isFinite(sessionFee) ||
+      sessionFee < MIN_COUNSELOR_SESSION_FEE
+    ) {
+      return res.status(400).json({ error: `Session fee must be at least ₹${MIN_COUNSELOR_SESSION_FEE}` });
     }
     const counselor = await prisma.counselor.update({
       where: { id: req.params.id },

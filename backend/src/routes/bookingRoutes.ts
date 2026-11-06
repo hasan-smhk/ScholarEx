@@ -7,6 +7,7 @@ import {
   releaseExpiredCounselingReservations,
 } from '../services/counselingSchedule';
 import { getCounselorProfileIdForUser } from '../services/counselorAccess.service';
+import { COUNSELING_SERVICE_FEE } from '../services/counselingPricing';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -146,7 +147,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
               slotId: slot.id,
               isFreeSession: false,
               paymentStatus: PaymentStatus.PENDING,
-              amount: slot.counselor.sessionFee,
+              amount: slot.counselor.sessionFee + COUNSELING_SERVICE_FEE,
+              serviceFee: COUNSELING_SERVICE_FEE,
               educationBackground: assessment.educationBoard,
               currentStream: assessment.studentClass,
               careerAspiration: assessment.careerGoal || null,
@@ -203,6 +205,7 @@ router.get('/my-bookings', authMiddleware, async (req: Request, res: Response) =
         cancelledAt: true,
         refundReference: true,
         amount: true,
+        serviceFee: true,
         marksPercentage: true,
         meetingLink: true,
         studentName: true,

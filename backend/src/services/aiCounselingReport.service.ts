@@ -177,7 +177,7 @@ export async function generateCounselingReport(
           },
         ],
       }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!response.ok) {
@@ -225,6 +225,10 @@ export async function generateCounselingReport(
       error instanceof CounselingReportConfigurationError
     ) {
       throw error;
+    }
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      console.error('AI report provider request timed out after 120 seconds');
+      throw new CounselingReportProviderError('AI report generation timed out. Please try again.');
     }
     console.error('AI report provider request failed:', error instanceof Error ? error.message : 'Unknown error');
     throw new CounselingReportProviderError('AI report generation failed. Please try again.');

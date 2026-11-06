@@ -70,6 +70,10 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
 
+AI report requests are allowed up to two minutes to complete. If generation
+still times out, check the backend logs, provider availability, and any hosting
+proxy or request timeout configured in front of the backend.
+
 Emails are sent through Resend using `RESEND_API_KEY` and `EMAIL_FROM` in
 `backend/.env`. Create a Resend API key and verify the sending domain in Resend
 before setting `EMAIL_FROM=Info@jzdtechnologies.com`; the sender address must
@@ -77,10 +81,11 @@ belong to a verified domain. Student career report and session-link emails use
 `Info <info@jzdtechnologies.com>`. Keep the API key private and restart the
 backend after updating the environment. If email delivery fails, the backend
 logs the Resend status and provider error; students can retry report delivery
-from the report page. New counselor records default to ₹500 per paid session;
-administrators can configure a different fee for each counselor. The free
-first interaction is a student career report; all new counseling sessions
-require payment.
+from the report page. Counselor session fees have a ₹500 minimum, and each
+paid session includes a separate ₹25 service fee (₹525 minimum total).
+Administrators can configure a different counselor fee. The free first
+interaction is a student career report; all new counseling sessions require
+payment.
 
 Student registration automatically attempts a confirmation email from
 `info@jzdtechnologies.com`; verify that address/domain with Resend. If delivery

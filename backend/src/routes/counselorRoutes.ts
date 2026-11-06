@@ -10,6 +10,7 @@ import authMiddleware from '../middlewares/auth.middleware';
 import { getCounselorProfileIdForUser } from '../services/counselorAccess.service';
 import { sendSessionLinkEmail } from '../services/sessionLinkEmail.service';
 import { isCompleteCounselingChecklist } from '../services/counselingChecklist';
+import { COUNSELING_SERVICE_FEE } from '../services/counselingPricing';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -453,6 +454,7 @@ router.get('/', async (req: Request, res: Response) => {
     res.json(
       counselors.map((counselor) => ({
         ...counselor,
+        serviceFee: COUNSELING_SERVICE_FEE,
         slots: counselor.slots.filter(
           (slot) =>
             isCounselingSlot(slot.date, slot.startTime, slot.endTime) &&
@@ -494,6 +496,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
     res.json({
       ...counselor,
+      serviceFee: COUNSELING_SERVICE_FEE,
       slots: counselor.slots.filter(
         (slot) =>
           isCounselingSlot(slot.date, slot.startTime, slot.endTime) &&

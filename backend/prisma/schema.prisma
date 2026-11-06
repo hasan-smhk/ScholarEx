@@ -166,6 +166,7 @@ model Booking {
   paymentStatus               PaymentStatus             @default(PENDING)
   cancellationStatus          BookingCancellationStatus @default(NONE)
   amount                      Float                     @default(0)
+  serviceFee                  Float                     @default(0)
   marksPercentage             Float?
   meetingLink                 String?
   meetingLinkEmailSentAt      DateTime?

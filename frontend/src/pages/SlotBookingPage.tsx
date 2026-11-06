@@ -306,8 +306,8 @@ export default function SlotBookingPage() {
                 
                 {!counselor.isFree && (
                   <div className="flex justify-between items-center mb-4">
-                    <span className="text-gray-600 font-bold">Amount</span>
-                    <span className="font-black text-gray-900">₹500</span>
+                    <span className="text-gray-600 font-bold">Total (including service fee)</span>
+                    <span className="font-black text-gray-900">₹525</span>
                   </div>
                 )}
 

@@ -178,7 +178,7 @@ export default function RegisterPage(): React.ReactElement {
           <Link to="/" className="inline-flex items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-300">
             <BrandMark className="h-11 w-14 rounded-xl bg-white object-contain p-0.5 shadow-lg shadow-teal-950/40" />
             <span className="text-xl font-black tracking-tight sm:text-2xl">
-              Scholar<span className="text-teal-300">Ex</span>
+              JZD Scholar<span className="text-teal-300">Ex</span>
             </span>
           </Link>
           <Link

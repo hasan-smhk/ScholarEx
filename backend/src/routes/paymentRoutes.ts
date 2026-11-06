@@ -55,7 +55,8 @@ async function sendPaymentConfirmationEmails(bookingId: string): Promise<Payment
           date,
           booking.slot.startTime,
           booking.slot.endTime,
-          booking.amount
+          booking.amount,
+          booking.serviceFee
         ),
       });
       await prisma.booking.update({

@@ -1,0 +1,2 @@
+export const MIN_COUNSELOR_SESSION_FEE = 500;
+export const COUNSELING_SERVICE_FEE = 25;

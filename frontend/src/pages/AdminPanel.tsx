@@ -834,7 +834,7 @@ export default function AdminPanel() {
 
 				<section className="scholar-panel-card mt-6 rounded-lg border border-slate-200 bg-white p-5">
 					<h2 className="text-lg font-bold">Counselor session fees</h2>
-					<p className="mb-4 text-sm text-slate-500">All new counseling bookings are paid. These fees apply to each paid session.</p>
+					<p className="mb-4 text-sm text-slate-500">Counselor fees must be at least ₹500. Each paid booking includes a ₹25 service fee (₹525 minimum total).</p>
 					{overview.counselors.length ? (
 						<div className="divide-y divide-slate-100">
 							{overview.counselors.map((counselor) => (
@@ -847,7 +847,7 @@ export default function AdminPanel() {
 										<span>₹</span>
 										<input
 											type="number"
-											min="1"
+											min="500"
 											step="1"
 											value={feeDrafts[counselor.id] ?? counselor.sessionFee}
 											onChange={(event) => setFeeDrafts((current) => ({ ...current, [counselor.id]: Number(event.target.value) }))}

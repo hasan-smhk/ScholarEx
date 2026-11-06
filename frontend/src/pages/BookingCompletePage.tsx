@@ -13,6 +13,7 @@ interface Booking {
   counselorPaymentEmailSentAt: string | null;
   cancelledAt: string | null;
   amount: number;
+  serviceFee: number;
   slot: {
     date: string;
     startTime: string;
@@ -162,7 +163,9 @@ export default function BookingCompletePage() {
             <p className="mt-3 text-xs text-indigo-700">
               {booking.isFreeSession
                 ? 'This was your free first session. Future sessions are charged at the assigned counselor’s fee.'
-                : `Session fee paid: ₹${booking.amount}. Future sessions are charged at the assigned counselor’s fee.`}
+                : booking.serviceFee > 0
+                  ? `Total paid: ₹${booking.amount} (includes ₹${booking.serviceFee} service fee). Future sessions are charged at the assigned counselor’s fee, plus the service fee.`
+                  : `Session fee paid: ₹${booking.amount}. Future sessions are charged at the assigned counselor’s fee, plus the service fee.`}
             </p>
           </div>
           <button onClick={() => navigate('/dashboard')} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2">

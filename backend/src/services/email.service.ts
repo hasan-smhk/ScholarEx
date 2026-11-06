@@ -147,7 +147,8 @@ export const studentPaymentConfirmationEmail = (
   date: string,
   startTime: string,
   endTime: string,
-  amount: number
+  amount: number,
+  serviceFee: number
 ) => ({
   subject: 'Counselling session payment confirmed - ScholarEx',
   html: `
@@ -155,6 +156,7 @@ export const studentPaymentConfirmationEmail = (
       <h1>Your counselling session is confirmed</h1>
       <p>Hello ${escapeHtml(studentName)},</p>
       <p>We have received your payment of ₹${amount.toFixed(2)} for your counselling session.</p>
+      <p><strong>Counselor session fee:</strong> ₹${(amount - serviceFee).toFixed(2)}${serviceFee > 0 ? `<br /><strong>Service fee:</strong> ₹${serviceFee.toFixed(2)}` : ''}<br /><strong>Total paid:</strong> ₹${amount.toFixed(2)}</p>
       <p><strong>Counselor:</strong> ${escapeHtml(counselorName)} (${escapeHtml(specialization)})</p>
       <p><strong>Date:</strong> ${escapeHtml(date)}<br /><strong>Time:</strong> ${escapeHtml(startTime)}–${escapeHtml(endTime)} IST</p>
       <p>You can review the session in your ScholarEx account.</p>
@@ -178,7 +180,7 @@ export const counselorPaymentConfirmationEmail = (
       <p>Hello ${escapeHtml(counselorName)},</p>
       <p>${escapeHtml(studentName)} has booked a counselling session in ${escapeHtml(specialization)}.</p>
       <p><strong>Date:</strong> ${escapeHtml(date)}<br /><strong>Time:</strong> ${escapeHtml(startTime)}–${escapeHtml(endTime)} IST</p>
-      <p><strong>Session fee:</strong> ₹${amount.toFixed(2)}</p>
+      <p><strong>Total amount paid by student:</strong> ₹${amount.toFixed(2)}</p>
       <p>Sign in to your ScholarEx counselor account to review the appointment.</p>
     </div>
   `,

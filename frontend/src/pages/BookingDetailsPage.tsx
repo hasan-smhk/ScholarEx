@@ -38,6 +38,7 @@ interface Booking {
   studentPaymentEmailSentAt: string | null;
   counselorPaymentEmailSentAt: string | null;
   amount: number;
+  serviceFee: number;
   educationBackground: string;
   currentStream: string;
   careerAspiration: string;
@@ -416,7 +417,11 @@ export default function BookingDetailsPage() {
                         Free Session
                       </span>
                     ) : (
-                      `₹${booking.amount}`
+                      <span>
+                        <span className="block">Session fee: ₹{booking.amount - booking.serviceFee}</span>
+                        {booking.serviceFee > 0 && <span className="block">Service fee: ₹{booking.serviceFee}</span>}
+                        <span className="block">Total: ₹{booking.amount}</span>
+                      </span>
                     )}
                   </p>
                 </div>
@@ -566,7 +571,12 @@ export default function BookingDetailsPage() {
             </p>
 
             <div className="bg-amber-50 rounded-2xl p-6 mb-8 max-w-sm mx-auto">
-              <p className="text-sm text-amber-600 font-semibold mb-1">Amount to Pay</p>
+              <p className="text-sm text-amber-600 font-semibold mb-1">Total amount to pay</p>
+              {booking.serviceFee > 0 && (
+                <p className="mb-1 text-sm text-gray-600">
+                  Session fee ₹{booking.amount - booking.serviceFee} + service fee ₹{booking.serviceFee}
+                </p>
+              )}
               <p className="text-4xl font-black text-gray-900">₹{booking.amount}</p>
             </div>
             {recoveryMessage && (

@@ -20,6 +20,7 @@ interface Counselor {
   name: string;
   specialization: string;
   sessionFee?: number;
+  serviceFee?: number;
   rating?: number;
   experience?: string;
   location?: string;
@@ -223,7 +224,11 @@ export default function CounselorListPage() {
                       {typeof counselor.sessionFee === 'number' && (
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                           <span aria-hidden="true">₹</span>
-                          <span>{counselor.sessionFee.toLocaleString('en-IN')} per session · payment required</span>
+                          <span>
+                            ₹{counselor.sessionFee.toLocaleString('en-IN')} session fee
+                            {typeof counselor.serviceFee === 'number' && ` + ₹${counselor.serviceFee.toLocaleString('en-IN')} service fee`}
+                            {` · ₹${(counselor.sessionFee + (counselor.serviceFee ?? 0)).toLocaleString('en-IN')} total per session`}
+                          </span>
                         </div>
                       )}
                     </div>
